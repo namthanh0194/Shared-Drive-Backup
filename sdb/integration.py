@@ -76,6 +76,11 @@ def register(store, panel_path):
         body = source.read_bytes()
         previous_state = state_path.read_bytes() if state_path.exists() else None
         previous_registry = registry.read_bytes() if registry.exists() else None
+        icon = panel / 'BTPanel/static/img/soft_ico' / ('ico-' + PLUGIN + '.png')
+        icon_source = store.root / 'icon.png'
+        icon_payload = icon_source.read_bytes() if icon_source.is_file() else None
+        previous_icon = icon.read_bytes() if icon.exists() else None
+        previous_icon_mode = icon.stat().st_mode & 0o777 if icon.exists() else 0o644
         state = json.loads(previous_state) if previous_state is not None else None
         baseline = body
         if state and digest(body) == state.get('patched_hash') and not (LIST_PATCH in body.decode('utf-8') and DISPATCH_PATCH in body.decode('utf-8')):
@@ -104,6 +109,10 @@ def register(store, panel_path):
             atomic_json(registry, libraries)
             if body != result:
                 atomic_json(state_path, state)
+            if icon_payload is not None:
+                icon.parent.mkdir(parents=True, exist_ok=True)
+                replace_file(icon, icon_payload)
+                icon.chmod(0o644)
         except BaseException:
             if body != result:
                 replace_file(source, body)
@@ -115,6 +124,12 @@ def register(store, panel_path):
                 replace_file(state_path, previous_state)
             else:
                 state_path.unlink(missing_ok=True)
+            if icon_payload is not None:
+                if previous_icon is not None:
+                    replace_file(icon, previous_icon)
+                    icon.chmod(previous_icon_mode)
+                else:
+                    icon.unlink(missing_ok=True)
             raise
     return {'registered': True, 'restart_panel_required': body != result, 'core_hash': digest(result)}
 

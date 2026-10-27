@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.7 — 2026-10-27
+
+- Sửa thứ tự khởi tạo popup: căn bố cục sau khi aaPanel hoàn tất mở layer, tránh vị trí bị ghi lại thành top:20%.
+- Tách thanh tiêu đề cố định và vùng nội dung cuộn; đặt toàn bộ nút đóng vào trong thanh tiêu đề.
+- Đồng bộ màu thanh tiêu đề và nút đóng theo giao diện plugin, kể cả khi đổi sáng/tối.
+- Thay icon bằng đúng ảnh Google Drive của plugin gdrive; đồng bộ icon riêng của Shared Drive Backup khi cài hoặc cập nhật.
+
 ## 1.0.6 — 2026-10-27
 
 - UI: Dùng setProperty !important ép cứng chiều cao và overflow cho .layui-layer và .layui-layer-content, ngăn aaPanel ghi đè style khiến popup bị tràn chân màn hình.

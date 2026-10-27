@@ -176,30 +176,14 @@
         }
       }
       root.classList.toggle('sdb-light', !isDark);
-      if (window.$) {
-        const modal = window.$(root).closest('.layui-layer');
-        if (modal.length) {
-          const title = modal.find('.layui-layer-title');
-          if (isDark) {
-            modal.css('background-color', '#202020');
-            title.css({
-              'background-color': '#252525',
-              'color': '#e8e8e8',
-              'border-bottom': '1px solid #383838'
-            });
-            modal.find('.layui-layer-close').css('filter', 'invert(1) grayscale(1)');
-          } else {
-            modal.css('background-color', '#fff');
-            title.css({
-              'background-color': '#f8f8f8',
-              'color': '#333',
-              'border-bottom': '1px solid #eee'
-            });
-            modal.find('.layui-layer-close').css('filter', 'none');
-          }
-        }
-      }
+      syncModalTheme();
     } catch (e) {}
+  }
+  function syncModalTheme() {
+    const modal = root.closest('.layui-layer');
+    if (!modal) return;
+    const styles = getComputedStyle(root);
+    ['--sdb-bg', '--sdb-surface', '--sdb-text', '--sdb-border', '--sdb-hover'].forEach(property => modal.style.setProperty(property, styles.getPropertyValue(property)));
   }
   syncTheme();
   if (window.MutationObserver) {
@@ -207,65 +191,40 @@
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['theme-mode', 'data-theme', 'class'] });
   }
   window.addEventListener('storage', event => { if (event.key === 'ThemeStore') syncTheme(); });
-  bind('theme', () => { root.classList.toggle('sdb-light'); });
+  bind('theme', () => { root.classList.toggle('sdb-light'); syncModalTheme(); });
   find('http-warning').hidden = secure;
+  let modalLayoutFrame;
   function adjustModalPosition() {
-    if (!window.$) return;
-    const modal = window.$(root).closest('.layui-layer');
-    if (!modal.length) return;
-    const targetWidth = Math.min(1100, Math.max(360, window.innerWidth - 40));
-    const targetLeft = Math.max(16, Math.round((window.innerWidth - targetWidth) / 2));
-    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 800;
-    const targetTop = 20;
-    const maxHeight = Math.max(350, viewportHeight - (targetTop * 2));
-    const title = modal.find('.layui-layer-title');
-    const titleHeight = title.outerHeight() || 42;
-    const contentHeight = maxHeight - titleHeight;
-    const modalEl = modal[0];
-    if (modalEl) {
-      modalEl.style.setProperty('width', targetWidth + 'px', 'important');
-      modalEl.style.setProperty('height', maxHeight + 'px', 'important');
-      modalEl.style.setProperty('max-height', maxHeight + 'px', 'important');
-      modalEl.style.setProperty('left', targetLeft + 'px', 'important');
-      modalEl.style.setProperty('top', targetTop + 'px', 'important');
-      modalEl.style.setProperty('transform', 'none', 'important');
-      modalEl.style.setProperty('margin', '0', 'important');
-      modalEl.style.setProperty('overflow', 'hidden', 'important');
-      modalEl.style.setProperty('border-radius', '6px', 'important');
-      modalEl.style.setProperty('box-shadow', '0 10px 40px rgba(0,0,0,0.5)', 'important');
-    }
-    title.css({
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
-      whiteSpace: 'nowrap',
-      userSelect: 'none'
+    if (modalLayoutFrame) return;
+    modalLayoutFrame = requestAnimationFrame(() => {
+      modalLayoutFrame = null;
+      if (!root.isConnected) return;
+      const modal = root.closest('.layui-layer');
+      if (!modal) return;
+      const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      const targetWidth = Math.min(1100, viewportWidth - 32);
+      modal.classList.add('sdb-modal');
+      Object.assign(modal.style, {
+        width: targetWidth + 'px',
+        height: (viewportHeight - 40) + 'px',
+        maxHeight: (viewportHeight - 40) + 'px',
+        left: ((viewportWidth - targetWidth) / 2) + 'px',
+        top: '20px',
+        transform: 'none',
+        margin: '0'
+      });
+      const content = modal.querySelector('.layui-layer-content');
+      if (content) content.style.removeProperty('height');
+      const close = modal.querySelector('.layui-layer-close');
+      const titleIcon = modal.querySelector('.layui-layer-title img');
+      if (titleIcon) titleIcon.src = root.querySelector('.sdb-brand img').src;
+      if (close) {
+        close.textContent = '×';
+        close.setAttribute('aria-label', 'Đóng Shared Drive Backup');
+      }
+      syncModalTheme();
     });
-    modal.find('.layui-layer-setwin').css({
-      top: '13px',
-      right: '16px',
-      zIndex: '99'
-    });
-    const content = modal.find('.layui-layer-content');
-    if (content.length && content[0]) {
-      const contentEl = content[0];
-      contentEl.style.setProperty('height', contentHeight + 'px', 'important');
-      contentEl.style.setProperty('max-height', contentHeight + 'px', 'important');
-      contentEl.style.setProperty('overflow-y', 'auto', 'important');
-      contentEl.style.setProperty('overflow-x', 'hidden', 'important');
-      contentEl.style.setProperty('box-sizing', 'border-box', 'important');
-    }
-    const index = modal.attr('times');
-    if (window.layer && index && typeof window.layer.style === 'function') {
-      try {
-        window.layer.style(index, {
-          width: targetWidth + 'px',
-          height: maxHeight + 'px',
-          left: targetLeft + 'px',
-          top: targetTop + 'px'
-        });
-      } catch (e) {}
-    }
-    syncTheme();
   }
   adjustModalPosition();
   window.addEventListener('resize', adjustModalPosition);
