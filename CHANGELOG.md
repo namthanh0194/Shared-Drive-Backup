@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.2 — 2026-10-27
+
+- UI: Thêm nút Cập nhật ở góc trên bên phải header, tự động xuất hiện nổi bật khi có phiên bản mới trên GitHub.
+- Đồng bộ hành động cập nhật trên header và tab Cài đặt & phiên bản.
+
 ## 1.0.1 — 2026-10-27
 
 - Ghim đúng repo public `namthanh0194/Shared-Drive-Backup`; bỏ yêu cầu token khỏi UI và không gửi token trong luồng tải cập nhật.
