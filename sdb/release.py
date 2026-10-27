@@ -8,6 +8,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -26,6 +27,8 @@ TOP_FILES = {
 }
 MAX_ARCHIVE = 30 * 1024 * 1024
 MAX_EXPANDED = 80 * 1024 * 1024
+UPDATE_INTERVAL = 6 * 60 * 60
+UPDATE_RETRY_INTERVAL = 15 * 60
 REQUIRED_FILES = {
     'info.json', 'shared_drive_backup_main.py', 'cli.py', 'index.html', 'ui.js', 'ui.css',
     'install.sh', 'upgrade.sh', 'repair.sh', 'uninstall.sh', 'requirements.txt', 'tools/install_plugin.py', 'tools/recover_deployment.py',
@@ -124,12 +127,13 @@ def github_get(url, token=None, binary=False, limit=MAX_ARCHIVE):
 
 
 def latest_release(store):
-    token = store.secret('github_token')
     try:
-        document = json.loads(github_get(f'https://api.github.com/repos/{REPOSITORY}/releases/latest', token, limit=1024 * 1024))
+        document = json.loads(github_get(f'https://api.github.com/repos/{REPOSITORY}/releases/latest', limit=1024 * 1024))
     except urllib.error.HTTPError as error:
         if error.code == 404:
-            raise ValueError('Chưa có release hoặc token chưa có quyền đọc repo private. Chưa thể cập nhật.') from None
+            raise ValueError('Chưa có GitHub Release công khai. Tag Git chưa đủ để cập nhật.') from None
+        if error.code in {403, 429}:
+            raise ValueError('GitHub đang giới hạn lượt truy cập. Plugin sẽ thử lại sau.') from None
         raise ValueError(f'GitHub API trả về HTTP {error.code}.') from None
     version = document.get('tag_name', '').removeprefix('v')
     version_tuple(version)
@@ -140,6 +144,30 @@ def latest_release(store):
     if name not in assets or name + '.sig' not in assets:
         raise ValueError('Release thiếu gói cài hoặc chữ ký.')
     return {'version': version, 'available': version_tuple(version) > version_tuple(VERSION), 'body': str(document.get('body', ''))[:5000], 'url': document.get('html_url', ''), 'assets': assets, 'asset_name': name}
+
+def check_for_updates(store, force=False):
+    path = store.data / 'update-cache.json'
+    with file_lock(store.data / 'update-check.lock', blocking=True):
+        now = int(time.time())
+        try:
+            cached = json.loads(path.read_text())
+            valid = isinstance(cached, dict) and cached.get('repository') == REPOSITORY and 0 <= now - cached['checked_at'] < (UPDATE_RETRY_INTERVAL if cached.get('error') else UPDATE_INTERVAL)
+            if valid and cached.get('version') is not None:
+                version_tuple(cached['version'])
+        except (OSError, ValueError, KeyError, TypeError):
+            cached, valid = None, False
+        if force or not valid:
+            cached = {'repository': REPOSITORY, 'checked_at': now, 'version': None, 'body': '', 'url': '', 'error': None}
+            try:
+                release = latest_release(store)
+                cached.update({key: release[key] for key in ('version', 'body', 'url')})
+            except ValueError as error:
+                cached['error'] = str(error)
+            except (urllib.error.URLError, OSError):
+                cached['error'] = 'Không kết nối được GitHub. Kiểm tra mạng; plugin sẽ thử lại sau.'
+            atomic_json(path, cached)
+        interval = UPDATE_RETRY_INTERVAL if cached.get('error') else UPDATE_INTERVAL
+        return {**cached, 'installed_version': VERSION, 'available': not cached.get('error') and cached.get('version') is not None and version_tuple(cached['version']) > version_tuple(VERSION), 'next_check_at': cached['checked_at'] + interval}
 
 
 def code_files(root):
@@ -260,15 +288,14 @@ def update(store, expected_version):
         release = latest_release(store)
         if release['version'] != expected_version or not release['available']:
             raise ValueError('Release đã thay đổi hoặc không mới hơn. Hãy kiểm tra lại.')
-        token = store.secret('github_token')
         name = release['asset_name']
         asset = release['assets'][name]
         signature_asset = release['assets'][name + '.sig']
         prefix = f'https://api.github.com/repos/{REPOSITORY}/releases/assets/'
         if not str(asset.get('url', '')).startswith(prefix) or not str(signature_asset.get('url', '')).startswith(prefix):
             raise ValueError('Asset không thuộc repo đã ghim.')
-        payload = github_get(asset['url'], token, binary=True)
-        signature = github_get(signature_asset['url'], token, binary=True, limit=1024)
+        payload = github_get(asset['url'], binary=True)
+        signature = github_get(signature_asset['url'], binary=True, limit=1024)
         trusted_key = bytes.fromhex((store.root / 'sdb/release_key.pub').read_text().strip())
         verify_signature(payload, signature, trusted_key)
         stage = Path(tempfile.mkdtemp(dir=store.tmp, prefix='release-'))

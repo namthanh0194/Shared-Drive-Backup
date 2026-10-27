@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1 — 2026-10-27
+
+- Ghim đúng repo public `namthanh0194/Shared-Drive-Backup`; bỏ yêu cầu token khỏi UI và không gửi token trong luồng tải cập nhật.
+- Tự kiểm tra khi mở plugin, cache 6 giờ, retry lỗi sau 15 phút; có kiểm tra ngay, trạng thái lỗi, changelog và thông báo bản mới.
+- Chỉ cài khi người dùng xác nhận; giữ nguyên chữ ký Ed25519, xác minh gói, khóa tác vụ và rollback bảo toàn runtime.
+- Bổ sung AGENTS.md mô tả kiến trúc, quy tắc code, bảo mật, test và phát hành.
+- Đóng gói tái lập và workflow xác minh chữ ký từ annotated tag trước khi publish; khóa ký luôn ở VPS maintainer.
+
 ## 1.0.0 — 2026-10-26
 
 - Plugin riêng cho Google Shared drives; không sửa plugin Google Drive hoặc OLS.

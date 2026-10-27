@@ -4,7 +4,7 @@
   if (!root || root.dataset.initialized) return;
   root.dataset.initialized = 'true';
   const find = id => root.querySelector('#sdb-' + id);
-  const state = { config: {}, inventory: { sites: [], databases: [] }, jobs: [], release: null, picker: { drive: '', folder: '', next: '', driveNext: '', sequence: 0 }, pending: 0 };
+  const state = { config: {}, inventory: { sites: [], databases: [] }, jobs: [], release: null, updateChecking: false, nextUpdateCheck: 0, picker: { drive: '', folder: '', next: '', driveNext: '', sequence: 0 }, pending: 0 };
   const secure = location.protocol === 'https:';
   const labels = { queued: 'Chờ chạy', running: 'Đang chạy', success: 'Thành công', failed: 'Thất bại' };
   const phases = { preflight: 'kiểm tra', archive: 'nén', upload: 'upload', retention: 'giữ bản', download: 'tải về', complete: 'hoàn tất' };
@@ -32,6 +32,7 @@
     root.querySelectorAll('[role=tab]').forEach(tab => { const selected = tab.dataset.tab === name; tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1; });
     root.querySelectorAll('[role=tabpanel]').forEach(panel => { panel.hidden = panel.id !== 'sdb-' + name; });
     adjustModalPosition();
+    if (name === 'settings') checkUpdates();
     if (name === 'history') loadHistory().catch(error => message(error.message, true));
     if (name === 'cron') loadTasks().catch(error => message(error.message, true));
     if (name === 'backup') loadInventory().catch(error => message(error.message, true));
@@ -53,7 +54,7 @@
     ['server-name', 'min-free', 'max-archive'].forEach((id, index) => { if (document.activeElement !== find(id)) find(id).value = result.config[['server_name', 'min_free_mb', 'max_archive_gb'][index]]; });
     if (document.activeElement !== find('keep-local')) find('keep-local').checked = result.config.keep_local;
     if (document.activeElement !== find('prune')) find('prune').checked = result.config.prune_enabled;
-    text('github-state', result.github_configured ? 'Đã lưu token. Không hiển thị lại secret.' : 'Chưa cấu hình token; repo private cần token chỉ đọc.'); find('rollback').disabled = !result.rollback_available;
+    find('rollback').disabled = !result.rollback_available;
     renderJobs(find('recent-rows'), result.history, false);
     return result;
   }
@@ -101,9 +102,33 @@
   find('backup-kind').addEventListener('change', renderTargets);
   find('backup-form').addEventListener('submit', async event => { event.preventDefault(); const submit = event.currentTarget.querySelector('[type=submit]'); try { await action(submit, async () => { const kind = find('backup-kind').value; const target = kind === 'path' ? find('backup-path').value.trim() : find('backup-target').value; if (!target) throw new Error('Chọn nguồn backup trước.'); if (!confirm('Backup ' + target + ' lên thư mục đã xác nhận? Plugin sẽ tạo archive trên đĩa VPS.')) return; const result = await api('start_backup', { kind, target, keep: find('backup-keep').value, exclusions: kind === 'database' ? '' : find('backup-exclusions').value }); message('Đã tạo tác vụ ' + result.job_id + '. Theo dõi tiến độ trong Lịch sử.', false); showTab('history'); }); } catch (error) {} });
   find('settings-form').addEventListener('submit', async event => { event.preventDefault(); if (find('prune').checked && !state.config.prune_enabled && !confirm('Cho phép đưa các bản backup cũ do plugin quản lý vào thùng rác Drive, theo số bản giữ lại của từng nguồn?')) { find('prune').checked = false; return; } try { await action(event.currentTarget.querySelector('[type=submit]'), async () => { await api('save_settings', { server_name: find('server-name').value, min_free_mb: find('min-free').value, max_archive_gb: find('max-archive').value, keep_local: find('keep-local').checked ? '1' : '0', prune_enabled: find('prune').checked ? '1' : '0' }); await refresh(); }, 'Đã lưu cài đặt.'); } catch (error) {} });
-  bind('save-github-token', event => action(event.currentTarget, async () => { await api('save_github_token', { token: find('github-token').value }); find('github-token').value = ''; await refresh(); }, 'Đã lưu token, không đưa vào gói phát hành.'));
-  bind('check-update', event => action(event.currentTarget, async () => { state.release = null; find('update').disabled = true; const result = await api('check_update'); state.release = result; text('release-notes', 'Bản mới nhất: ' + result.version + '\n' + (result.body || 'Không có changelog.')); find('update').disabled = !result.available; }, 'Đã kiểm tra release.'));
-  bind('update', async event => { if (!state.release || !confirm('Cập nhật lên ' + state.release.version + '? Giữ cấu hình và secrets, chặn cập nhật khi đang backup.')) return; await action(event.currentTarget, async () => { await api('update', { version: state.release.version }); state.release = null; find('update').disabled = true; text('release-notes', 'Đã cập nhật. Đóng và mở lại plugin để nạp giao diện mới.'); await refresh(); }, 'Đã cập nhật. Đóng và mở lại plugin.'); });
+  function renderUpdate(result) {
+    state.release = result;
+    state.nextUpdateCheck = result.next_check_at;
+    find('update').disabled = !result.available || Boolean(result.error);
+    text('update', result.available ? 'Cập nhật lên v' + result.version : 'Update');
+    text('update-status', result.error || (result.available ? 'Có phiên bản mới: v' + result.version : 'Bạn đang dùng bản mới nhất: v' + result.installed_version));
+    text('update-checked', result.checked_at ? 'Lần kiểm tra: ' + date(result.checked_at) : 'Chưa kiểm tra được phiên bản.');
+    find('update-banner').hidden = !result.available || Boolean(result.error);
+    text('update-banner-text', result.available ? 'Đã có Shared Drive Backup v' + result.version + '.' : '');
+    find('release-notes').hidden = !result.body;
+    text('release-notes', result.body || '');
+  }
+  async function checkUpdates(force = false) {
+    if (state.updateChecking || (!force && Date.now() / 1000 < state.nextUpdateCheck)) return;
+    state.updateChecking = true;
+    find('update').disabled = true;
+    text('update-status', 'Đang kiểm tra phiên bản…');
+    try {
+      renderUpdate(await api('check_update', { force: force ? '1' : '0' }));
+    } catch (error) {
+      renderUpdate({ available: false, error: error.message, checked_at: null, next_check_at: Date.now() / 1000 + 900 });
+    } finally {
+      state.updateChecking = false;
+    }
+  }
+  bind('check-update', event => action(event.currentTarget, () => checkUpdates(true)));
+  bind('update', async event => { if (!state.release || !state.release.available || !confirm('Cập nhật lên ' + state.release.version + '? Giữ cấu hình và secrets, chặn cập nhật khi đang backup.')) return; await action(event.currentTarget, async () => { await api('update', { version: state.release.version }); state.release = null; find('update').disabled = true; find('update-banner').hidden = true; text('update-status', 'Đã cập nhật. Đóng và mở lại plugin để nạp giao diện mới.'); await refresh(); }, 'Đã cập nhật. Đóng và mở lại plugin.'); });
   bind('rollback', async event => { if (!confirm('Khôi phục mã phiên bản trước, giữ dữ liệu và cấu hình?')) return; await action(event.currentTarget, async () => { await api('rollback'); await refresh(); }, 'Đã rollback. Đóng và mở lại plugin.'); });
   bind('repair-integration', event => action(event.currentTarget, async () => { const result = await api('repair_integration'); await refresh(); if (result.restart_panel_required) message('Adapter đã sửa. Cần nạp lại dịch vụ panel để backend nhận thay đổi; không cần restart OLS.', false); }));
   function syncTheme() {
@@ -173,6 +198,7 @@
   }
   adjustModalPosition();
   window.addEventListener('resize', adjustModalPosition);
-  showTab('overview'); refresh().catch(error => message(error.message, true));
+  showTab('overview'); refresh().catch(error => message(error.message, true)); checkUpdates();
+  const updateTimer = setInterval(() => { if (!root.isConnected) { clearInterval(updateTimer); return; } if (!document.hidden) checkUpdates(); }, 60000);
   const timer = setInterval(() => { if (!root.isConnected) { clearInterval(timer); return; } if (document.hidden || find('folder-dialog').open) return; const selected = root.querySelector('[role=tab][aria-selected=true]'); if (selected && selected.dataset.tab === 'overview') refresh().catch(() => {}); if (selected && selected.dataset.tab === 'history') loadHistory().catch(() => {}); }, 7000);
 })();

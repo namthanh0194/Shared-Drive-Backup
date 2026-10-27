@@ -80,15 +80,13 @@ Backup exclusions are tar patterns, not shell commands. The source must be a rea
 
 ## Versioning / updates / GitHub
 
-Pinned repository: `namthanh0194/aapanel-shared-drive-backup`, private by default. Each VPS needs a read-only Contents token for this repo. Store through HTTPS UI or import from a root-only file:
+Pinned public repository: `namthanh0194/Shared-Drive-Backup`. VPS installations need **no GitHub token or SSH key** to check/download releases. Previously stored GitHub tokens are not sent by the public updater; existing secret files are preserved for compatibility/rollback.
 
-```sh
-/www/server/panel/pyenv/bin/python -B \
-  /www/server/panel/plugin/shared_drive_backup/cli.py \
-  import-github-token /safe/path/github-token.txt
-```
+The UI automatically checks on opening the plugin and rechecks when the six-hour server cache expires while the plugin remains open. It does not install a background system Cron or check while the UI is closed. A failed check is shown as an error, not "up to date", and is retried after 15 minutes. **Kiểm tra ngay** bypasses the cache. The interface displays the installed/latest version, last check, safe-text changelog and a new-version notice across tabs. Installation happens only after the user clicks **Cập nhật lên v…** and confirms.
 
-Check updates → inspect changelog → Update. The updater accepts only stable semver releases from the pinned repository with both `shared_drive_backup-X.Y.Z.zip` and `.zip.sig`, verifies Ed25519 against bundled `sdb/release_key.pub`, validates archive paths/sizes and Python syntax, preserves data/logs/config, and keeps the previous code for rollback. A release cannot replace its own trusted key. Close/reopen the plugin after updating to refresh UI; backend API runs in a fresh subprocess per request.
+The updater accepts only stable semver releases from the pinned repository with both `shared_drive_backup-X.Y.Z.zip` and `.zip.sig`, verifies Ed25519 against bundled `sdb/release_key.pub`, validates archive paths/sizes and Python syntax, preserves data/logs/config, and keeps the previous code for rollback. A release cannot replace its own trusted key. Close/reopen the plugin after updating to refresh UI; backend API runs in a fresh subprocess per request. Release metadata is fetched again without cache before installation.
+
+A Git tag alone is not an installable release. Until signed assets are published, the UI explicitly says there is no public GitHub Release. Installations of the original 1.0.0 that pinned the old repository need a one-time import/install of the trusted 1.0.1 package; they cannot discover the new repository through the old URL.
 
 Before changing live files, deployment prepares a durable code snapshot and records a private recovery journal. Handled errors and SIGINT restore code before clearing it. SIGKILL/power loss cannot run a Python rollback handler; snapshots/journal remain, and backup/new updates are blocked pending recovery. Run the standalone stdlib-only helper from the trusted DEV checkout (or the installed tool if intact):
 
@@ -99,19 +97,19 @@ Before changing live files, deployment prepares a durable code snapshot and reco
 
 This restores the recorded previous code/adapter without touching credentials or backup data. Preserve snapshots until checked. A first installation interrupted before a previous code snapshot exists requires checking/unregistering the recorded adapter and rerunning the trusted installer; do not delete its recovery journal blindly.
 
-For maintainers: bump `sdb/__init__.py` and `info.json` together, update CHANGELOG, run checks, then package using the protected Ed25519 signing key. Losing this key prevents future updates under the old trust root. Back it up separately and never commit/publish it.
+For maintainers: follow `AGENTS.md`, bump `sdb/__init__.py`, `info.json` and HTML fallback labels together, update CHANGELOG and run checks before deployment or publication. Losing the protected Ed25519 signing key prevents future updates under the old trust root. Back it up separately and never commit/publish it.
 
 ```sh
 /www/server/panel/pyenv/bin/python -B tools/package_release.py --key /safe/path/signing-key.pem
 ```
 
-Artifacts live in `tmp/dist/`. To create the private repository/push a clean committed main/publish a draft then finalized release, provide an authorized `GH_TOKEN`/`GITHUB_TOKEN` in your secure shell environment and run:
+Artifacts live only in `tmp/dist/`. Packages are reproducible (sorted paths, fixed ZIP metadata and no compression), so GitHub Actions can rebuild exactly the locally signed bytes without receiving the private signing key. After the user authorizes committing/pushing a tested clean `main`, publish using the maintainer's existing SSH write access:
 
 ```sh
-/www/server/panel/pyenv/bin/python -B tools/publish_release.py --create-repository --publish
+/www/server/panel/pyenv/bin/python -B tools/publish_release.py --publish
 ```
 
-This tool requires repo creation/push/release permission, distinct from the read-only token used by VPS updaters. It never reads Codex credentials. Without a publishing token the tool fails without creating anything; local packaging is not proof of a GitHub release.
+The tool checks the clean main branch and pinned remote, signs locally, then atomically pushes main and a new annotated version tag containing only public SHA-256/signature metadata. It does not create commits or replace existing tags. `.github/workflows/release.yml` rebuilds that exact tag, verifies the digest and Ed25519 signature and publishes the ZIP/signature using the workflow's built-in `GITHUB_TOKEN` with `contents: write`. No personal token or signing-key secret is required on GitHub. GitHub Actions must be enabled for the repository. Check workflow success and anonymous asset downloads before claiming publication; pushing a tag/local packaging is not proof of a Release. Runtime data, tests and build outputs are never committed.
 
 ## Validation
 

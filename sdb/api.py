@@ -11,7 +11,7 @@ from sdb import PLUGIN, REPOSITORY, VERSION
 from sdb.drive import identifier, make_client, validate_credentials
 from sdb.integration import register, status as integration_status
 from sdb.panel import Panel
-from sdb.release import latest_release, rollback, update
+from sdb.release import check_for_updates, rollback, update
 from sdb.storage import file_lock, validate_source
 from sdb.worker import ensure_ready, validate_exclusions
 
@@ -189,8 +189,7 @@ class API:
         return {'saved': True}
 
     def check_update(self, arguments):
-        release = latest_release(self.store)
-        return {key: value for key, value in release.items() if key != 'assets'}
+        return check_for_updates(self.store, force=boolean(arguments.get('force', False)))
 
     def update(self, arguments):
         return update(self.store, str(arguments.get('version', '')))

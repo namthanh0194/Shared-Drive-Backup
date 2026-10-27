@@ -1,3 +1,3 @@
-VERSION = '1.0.0'
+VERSION = '1.0.1'
 PLUGIN = 'shared_drive_backup'
-REPOSITORY = 'namthanh0194/aapanel-shared-drive-backup'
+REPOSITORY = 'namthanh0194/Shared-Drive-Backup'

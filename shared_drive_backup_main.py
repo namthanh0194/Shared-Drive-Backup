@@ -23,7 +23,7 @@ class shared_drive_backup_main:
             'save_settings': {'server_name', 'prune_enabled', 'min_free_mb', 'max_archive_gb', 'keep_local'},
             'start_backup': {'kind', 'target', 'keep', 'exclusions'},
             'start_download': {'job_id'}, 'read_log': {'job_id'},
-            'save_github_token': {'token'}, 'update': {'version'},
+            'save_github_token': {'token'}, 'update': {'version'}, 'check_update': {'force'},
         }
         source = arguments.get_items() if hasattr(arguments, 'get_items') else (arguments or {})
         payload = {key: source[key] for key in fields.get(method, set()) if key in source}

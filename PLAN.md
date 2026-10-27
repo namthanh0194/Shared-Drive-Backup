@@ -1,5 +1,11 @@
 # Implementation plan
 
+## Public updater — approved direction, 2026-10-27
+1. Audit tracked Git history and verify the repository is public; retain private signing/runtime material outside Git.
+2. Add tests for public no-token release lookup, six-hour cache, forced refresh, failure cooldown and state-preserving signed updates; implement backend cache and automatic UI notices.
+3. Add project AGENTS.md and document public Releases, versioning and maintainer publishing. Build reproducible signed packages without putting artifacts/private keys in Git.
+4. Verify backend, browser auto-check scenarios and package signatures, then deploy without changing existing Cron/configuration. Git commits and public publication require explicit authorization.
+
 Binding spec: DESIGN.md. Execute inline; no extra worktrees for this new, explicitly requested DEV repository.
 
 1. Storage and Google adapter: write failing unittest cases for permissions, path validation, shared-drive parameters, pagination, membership validation, uploads and owned-only retention. Implement; rerun.
