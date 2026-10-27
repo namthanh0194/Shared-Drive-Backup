@@ -30,4 +30,9 @@
 - Signed 1.0.1 package verified against the existing pinned public key: 30 allowlisted files, 164981 bytes, no runtime data, tmp artifacts or private key paths. Package/signature remain under ignored tmp/dist/.
 - Installed 1.0.1 into production with `restart_panel_required:false`; no panel restart performed. Fresh before/after hashes confirm Google credentials/configuration, native Cron core, old gdrive plugin, ols_geo_access and OLS configuration unchanged. All four current Cron rows retain their baseline fields; native provider registration and production embedded updater assets verified.
 - Live anonymous production check correctly reports that no public GitHub Release exists; it does not falsely claim the plugin is up to date. Cache permissions are 0600. Git history pattern audit found no matching private-key/token/credential patterns, but this is not a guarantee against every possible secret.
-- Pending: these 1.0.1 changes remain uncommitted/unpushed; no v1.0.1 tag or GitHub Release created. Wait for explicit user authorization before committing, pushing and publishing; then verify the real Actions run, anonymous assets and signature. Git tag/local package alone is not publication.
+- User explicitly replied `ok` for commit/push/publish.
+- Committed `681b457` on branch `main` and created annotated tag `v1.0.1` containing locally signed package metadata.
+- Pushed atomic `main` and `refs/tags/v1.0.1` to GitHub origin over the SSH deploy key.
+- Verified GitHub API: tag `v1.0.1` and commit `681b457` exist remotely.
+- GitHub Actions: repository has `.github/workflows/release.yml` registered (Workflow ID 397794780). However, pushing both main and a tag in one git push or repository Actions default permission settings on newly created repos may require either Actions to be enabled/triggered or manual approval in GitHub repo Settings -> Actions. Currently `total_count: 0` runs and no GitHub Release has been created by GitHub yet.
+- Production live check remains safe: plugin detects no public Release asset yet and safely reports `Chưa có GitHub Release công khai. Tag Git chưa đủ để cập nhật.` without crashing.
