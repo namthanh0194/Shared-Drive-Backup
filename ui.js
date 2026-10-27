@@ -107,6 +107,12 @@
     state.nextUpdateCheck = result.next_check_at;
     find('update').disabled = !result.available || Boolean(result.error);
     text('update', result.available ? 'Cập nhật lên v' + result.version : 'Update');
+    const headerUpdate = find('header-update');
+    if (headerUpdate) {
+      headerUpdate.hidden = !result.available || Boolean(result.error);
+      headerUpdate.disabled = !result.available || Boolean(result.error);
+      headerUpdate.textContent = result.available ? 'Cập nhật lên v' + result.version : 'Cập nhật';
+    }
     text('update-status', result.error || (result.available ? 'Có phiên bản mới: v' + result.version : 'Bạn đang dùng bản mới nhất: v' + result.installed_version));
     text('update-checked', result.checked_at ? 'Lần kiểm tra: ' + date(result.checked_at) : 'Chưa kiểm tra được phiên bản.');
     find('update-banner').hidden = !result.available || Boolean(result.error);
@@ -128,7 +134,24 @@
     }
   }
   bind('check-update', event => action(event.currentTarget, () => checkUpdates(true)));
-  bind('update', async event => { if (!state.release || !state.release.available || !confirm('Cập nhật lên ' + state.release.version + '? Giữ cấu hình và secrets, chặn cập nhật khi đang backup.')) return; await action(event.currentTarget, async () => { await api('update', { version: state.release.version }); state.release = null; find('update').disabled = true; find('update-banner').hidden = true; text('update-status', 'Đã cập nhật. Đóng và mở lại plugin để nạp giao diện mới.'); await refresh(); }, 'Đã cập nhật. Đóng và mở lại plugin.'); });
+  async function triggerUpdate(control) {
+    if (!state.release || !state.release.available || !confirm('Cập nhật lên ' + state.release.version + '? Giữ cấu hình và secrets, chặn cập nhật khi đang backup.')) return;
+    await action(control, async () => {
+      await api('update', { version: state.release.version });
+      state.release = null;
+      find('update').disabled = true;
+      const headerUpdate = find('header-update');
+      if (headerUpdate) {
+        headerUpdate.disabled = true;
+        headerUpdate.hidden = true;
+      }
+      find('update-banner').hidden = true;
+      text('update-status', 'Đã cập nhật. Đóng và mở lại plugin để nạp giao diện mới.');
+      await refresh();
+    }, 'Đã cập nhật. Đóng và mở lại plugin.');
+  }
+  bind('update', event => triggerUpdate(event.currentTarget));
+  bind('header-update', event => triggerUpdate(event.currentTarget));
   bind('rollback', async event => { if (!confirm('Khôi phục mã phiên bản trước, giữ dữ liệu và cấu hình?')) return; await action(event.currentTarget, async () => { await api('rollback'); await refresh(); }, 'Đã rollback. Đóng và mở lại plugin.'); });
   bind('repair-integration', event => action(event.currentTarget, async () => { const result = await api('repair_integration'); await refresh(); if (result.restart_panel_required) message('Adapter đã sửa. Cần nạp lại dịch vụ panel để backend nhận thay đổi; không cần restart OLS.', false); }));
   function syncTheme() {
