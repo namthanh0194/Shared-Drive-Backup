@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.4 — 2026-10-27
+
+- Workflow: Thêm bước fetch tags tường minh để build release trên runner.
+- UI: Ẩn nút Update khi đang ở bản mới nhất.
+
 ## 1.0.3 — 2026-10-27
 
 - UI: Nút Cập nhật trên header mặc định ẩn hoàn toàn khi đang ở bản mới nhất, chỉ xuất hiện khi phát hiện có phiên bản mới trên GitHub.
