@@ -73,7 +73,8 @@ def register_backup(store, panel, job):
             raise ValueError('Chọn lại đúng nơi lưu gốc trước khi đồng bộ database.')
     backup_type = 0 if kind == 'site' else 1
     ownership = marker(store, job['id'])
-    filename = str(store.tmp / remote['name']) + '|' + PLUGIN + '|' + remote['id']
+    legacy_filename = str(store.tmp / remote['name']) + '|' + PLUGIN + '|' + remote['id']
+    filename = legacy_filename if kind == 'site' else PLUGIN + '|' + remote['name']
     connection = backup_connection(panel)
     try:
         with connection:
@@ -86,7 +87,7 @@ def register_backup(store, panel, job):
                 if row is None or dict(row) != saved:
                     raise ValueError('Database đã đổi ID/tên; không đăng ký vào database khác.')
             existing = connection.execute('SELECT id,filename FROM backup WHERE type=? AND pid=? AND ps=?', (backup_type, current['id'], ownership)).fetchall()
-            if len(existing) > 1 or any(entry['filename'].split('|')[1:2] != [PLUGIN] for entry in existing):
+            if len(existing) > 1 or any((entry['filename'].split('|')[1:2] != [PLUGIN] if kind == 'site' else entry['filename'] not in {filename, legacy_filename}) for entry in existing):
                 raise ValueError('Bản ghi native bị thay đổi; không ghi đè.')
             values = (remote['name'], filename, int(remote['size']), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(job['created'])))
             if existing:
@@ -100,13 +101,19 @@ def register_backup(store, panel, job):
 def remove_backup(store, panel, job_id, kind='site'):
     if kind not in {'site', 'database'}:
         raise ValueError('Loại backup native không hợp lệ.')
+    if kind == 'database':
+        job = store.job(job_id)
+        if job['details'].get('kind') != 'database':
+            raise ValueError('Tác vụ không phải backup database.')
+        remote = job['details']['remote']
+        filenames = {PLUGIN + '|' + remote['name'], str(store.tmp / remote['name']) + '|' + PLUGIN + '|' + remote['id']}
     connection = backup_connection(panel)
     try:
         with connection:
             connection.execute('BEGIN IMMEDIATE')
             rows = connection.execute('SELECT id,filename FROM backup WHERE type=? AND ps=?', (0 if kind == 'site' else 1, marker(store, job_id))).fetchall()
             for row in rows:
-                if row['filename'].split('|')[1:2] == [PLUGIN]:
+                if (row['filename'].split('|')[1:2] == [PLUGIN] if kind == 'site' else row['filename'] in filenames):
                     connection.execute('DELETE FROM backup WHERE id=?', (row['id'],))
     finally:
         connection.close()

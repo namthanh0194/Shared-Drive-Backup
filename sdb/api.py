@@ -25,6 +25,7 @@ METHODS = {
     'tasks', 'save_github_token', 'check_update', 'update', 'rollback', 'repair_integration', 'read_log',
     'restore_sites', 'restore_catalog', 'map_backup', 'sync_native', 'start_restore',
     'database_inventory', 'save_database_links', 'database_catalog', 'start_database_backup', 'start_database_restore', 'sync_database_native',
+    'cleanup_database_snapshots',
 }
 
 
@@ -79,6 +80,10 @@ class API:
 
     def sync_database_native(self, arguments):
         return databases.sync_native(self.store, Panel(), arguments.get('offset', 0))
+
+    def cleanup_database_snapshots(self, arguments):
+        details = databases.prepare_snapshot_cleanup(self.store, str(arguments.get('job_id', '')), str(arguments.get('confirmation', '')))
+        return self.launch(details, 'database_snapshot_cleanup')
 
     def start_database_backup(self, arguments):
         names = arguments.get('database_names', [])

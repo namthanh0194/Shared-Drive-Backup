@@ -14,7 +14,7 @@ from sdb.panel import Panel
 from sdb.storage import Store, file_lock, safe_error
 from sdb.worker import ensure_ready, run_backup, run_download, validate_exclusions
 from sdb.restore import run_restore
-from sdb.databases import prepare_backup, run_backup_set, run_restore as run_database_restore
+from sdb.databases import prepare_backup, run_backup_set, run_restore as run_database_restore, run_snapshot_cleanup
 from sdb.storage import assert_recovery_clear
 
 
@@ -80,6 +80,8 @@ def main():
             return 0 if run_restore(store, sys.argv[2]) else 1
         if operation in {'database_backup', 'database_restore'}:
             return 0 if (run_backup_set if operation == 'database_backup' else run_database_restore)(store, sys.argv[2]) else 1
+        if operation == 'database_snapshot_cleanup':
+            return 0 if run_snapshot_cleanup(store, sys.argv[2]) else 1
         if operation in {'site', 'path', 'database'}:
             return 0 if cron_backup(store, operation, sys.argv[2], sys.argv[3], sys.argv[4] if len(sys.argv) > 4 else '') else 1
         if operation in {'register', 'unregister'}:

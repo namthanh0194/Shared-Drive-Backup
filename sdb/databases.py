@@ -473,8 +473,70 @@ def run_restore(store, job_id, panel=None):
         return False
     finally:
         if stage is not None:
-            shutil.rmtree(stage)
+            try:
+                shutil.rmtree(stage)
+                store.update_job(job_id, store.job(job_id)['status'], temporary_files_cleaned=True, cleanup_warning='')
+            except Exception as error:
+                store.update_job(job_id, store.job(job_id)['status'], temporary_files_cleaned=False, cleanup_warning='Chưa dọn được file tải về/SQL tạm: ' + safe_error(error))
 
+
+def prepare_snapshot_cleanup(store, job_id, confirmation):
+    assert_recovery_clear(store)
+    job = store.job(job_id)
+    details = job['details']
+    snapshots = details.get('snapshots', [])
+    results = details.get('results', [])
+    if confirmation != 'DELETE ' + job_id:
+        raise ValueError('Cần xác nhận DELETE và đúng mã tác vụ khôi phục trước khi xoá snapshot.')
+    if job['status'] != 'success' or details.get('kind') != 'database_restore' or details.get('phase') != 'complete' or details.get('recovery_required') or not snapshots:
+        raise ValueError('Chỉ dọn snapshot của tác vụ khôi phục database đã hoàn tất thành công, không cần phục hồi.')
+    names = [database_name(item['name']) for item in snapshots]
+    if len(names) != len(set(names)) or sorted(item['name'] for item in results) != sorted(names) or any(item.get('state') != 'complete' for item in results):
+        raise ValueError('Kết quả khôi phục chưa hoàn tất cho toàn bộ snapshot.')
+    return {'kind': 'database_snapshot_cleanup', 'target': details.get('target', ', '.join(names)), 'restore_job_id': job_id, 'confirmation': confirmation}
+
+def run_snapshot_cleanup(store, job_id):
+    job = store.job(job_id)
+    if job['status'] != 'queued' or job['details'].get('kind') != 'database_snapshot_cleanup':
+        return False
+    try:
+        with file_lock(store.data / 'operation.lock'):
+            if store.job(job_id)['status'] != 'queued':
+                return False
+            details = job['details']
+            source_id = details['restore_job_id']
+            prepare_snapshot_cleanup(store, source_id, details['confirmation'])
+            source = store.job(source_id)
+            root = store.data / 'database-snapshots'
+            folder = root / source_id
+            if root.is_symlink() or folder.is_symlink() or root.resolve() != root.absolute() or folder.resolve() != folder.absolute():
+                raise ValueError('Thư mục snapshot không an toàn; không xoá.')
+            expected = {folder / (database_name(item['name']) + '.sql.gz') for item in source['details']['snapshots']}
+            if folder.exists() and (not folder.is_dir() or not set(folder.iterdir()).issubset(expected)):
+                raise ValueError('Thư mục snapshot chứa file lạ; không xoá.')
+            store.update_job(job_id, 'running', phase='validate')
+            files = []
+            for item in source['details']['snapshots']:
+                path = folder / (database_name(item['name']) + '.sql.gz')
+                if Path(item['snapshot']) != path or path.is_symlink():
+                    raise ValueError('Đường dẫn snapshot không thuộc tác vụ; không xoá.')
+                if path.exists():
+                    if not path.is_file() or digests(path)[1] != item.get('snapshot_sha256'):
+                        raise ValueError('Checksum snapshot đã thay đổi; không xoá.')
+                    files.append((path, path.stat().st_size))
+            for path, size in files:
+                path.unlink()
+            if folder.exists():
+                folder.rmdir()
+                sync_directory(root)
+            store.update_job(source_id, 'success', snapshots_cleaned=True, snapshots_cleaned_at=time.time())
+            store.update_job(job_id, 'success', phase='complete', removed_files=len(files), freed_bytes=sum(size for path, size in files))
+            print('Đã dọn snapshot local đã nghiệm thu của tác vụ ' + source_id + '; không đổi MySQL hoặc Drive.', flush=True)
+            return True
+    except Exception as error:
+        store.update_job(job_id, 'failed', error=safe_error(error))
+        print('Dọn snapshot thất bại: ' + safe_error(error), flush=True)
+        return False
 
 def recover(store, job_id, mode, confirmation, writers_stopped=False, panel=None):
     panel = panel or Panel()

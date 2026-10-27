@@ -103,13 +103,20 @@ MySQL client chạy qua socket local, dùng file tùy chọn 0600 thay vì mật
 
 Rollback kiểm tra checksum/đường dẫn snapshot và ID database rồi khôi phục các mục có thể đã bị thay đổi. Nếu lỗi, journal vẫn được giữ. Chỉ khi đã tự xác minh và quyết định chấp nhận trạng thái dữ liệu hiện tại mới dùng `accept --job JOB_ID --confirm "ACCEPT JOB_ID"`; thao tác này **không phục hồi dữ liệu**, chỉ ghi nhận quyết định và gỡ chặn journal database.
 
+### File tạm và dọn snapshot sau khôi phục (DEV)
+
+- File `.sql.gz` tải từ Drive và SQL giải nén nằm trong `tmp/database-restore-*`, được dọn sau tác vụ. Lịch sử chỉ báo **File tải về và SQL tạm đã dọn** khi việc xoá thực sự thành công; nếu dọn lỗi, hiển thị cảnh báo riêng, không phủ nhận kết quả import đã thành công.
+- `data/database-snapshots/<job-id>/<database>.sql.gz` là bản sao database **trước khi khôi phục**, không phải file tải về bị bỏ quên. Không tự xoá khi import thành công hoặc sau một thời hạn suy đoán. Công cụ `recover_database.py` xử lý journal đang mở; snapshot còn lại sau tác vụ thành công không tự tạo khả năng rollback một-click khi journal đã được gỡ.
+- Sau khi nghiệm thu dữ liệu ứng dụng, vào **Lịch sử → tác vụ khôi phục database thành công → Dọn snapshot**, nhập chính xác `DELETE <job-id>`. Worker kiểm tra lại kết quả hoàn tất của tất cả database, khoá tác vụ và journal; xác minh đúng thư mục/job, không symlink/file lạ và checksum mọi snapshot trước khi xoá. Chỉ xoá file local của tác vụ đã chọn, không đổi MySQL/Drive hoặc xoá snapshot tác vụ lỗi/còn journal.
+- Theo dõi tác vụ **Dọn snapshot MySQL** trong Lịch sử để biết kết quả/dung lượng giải phóng. Nếu lỗi I/O sau khi đã xoá một phần, giữ file còn lại và báo lỗi; có thể xác nhận lại để dọn phần còn lại. Chỉ khi hoàn tất mới đánh dấu snapshot đã dọn. Chức năng này không dọn snapshot website hoặc file tải kiểm tra thủ công.
+
 Kiểm thử DEV dùng MySQL/Drive giả lập, không chứng minh import thành công trên mọi phiên bản MySQL thật. Chưa chạy restore trên database thật hoặc triển khai production trong thay đổi này.
 
 ## Website restore and native Backup / Restore (DEV, unreleased)
 
 ### MySQL backup count in aaPanel (DEV)
 
-- Verified local MySQL backups now register `type=1` and `pid=database_id` in aaPanel's existing backup table, using `local_path|shared_drive_backup|remote_file_id`. This updates **Databases → MySQL → Backup**, not the Website source-code backup count. Single-database Cron, manual backups and individual batch members use the same registration; manifests are not counted.
+- Verified local MySQL backups register `type=1` and `pid=database_id` in aaPanel's existing backup table. Database remote filenames use `shared_drive_backup|<archive-name.sql.gz>`: this frontend derives Type from the first segment and the visible filename from the remaining segment. The Drive file ID stays in plugin history; the provider must keep its canonical plugin name so View opens the right plugin. Website filenames retain `local_path|shared_drive_backup|remote_file_id`. Sync migrates only exact, owned legacy database records without changing their ID/count. This updates **Databases → MySQL → Backup**, not the Website source-code backup count. Single-database Cron, manual backups and individual batch members use the same registration; manifests are not counted.
 - After upgrading, open the plugin's **Database** tab and choose **Đồng bộ đếm backup aaPanel** to backfill existing history, then refresh the native Databases page. Sync verifies Drive ownership/checksums, scans pages of 20, is idempotent and only registers history with a saved database identity matching the current local MySQL database and destination. Legacy backups without an ID, recreated databases and errors are skipped and reported; names alone do not prove identity.
 - Native counts reflect the last registration/sync. Sync removes only this plugin/VPS/job's database rows for confirmed trashed files; network, permission, HTTP 404 or checksum errors preserve rows. Removing a native row never deletes the Drive file. Use the plugin to download/restore remote backups; no native local import capability is added.
 - This integration writes backup metadata through the existing schema only: no aaPanel core source, schema, MySQL application data, credentials or Cron configuration changes.

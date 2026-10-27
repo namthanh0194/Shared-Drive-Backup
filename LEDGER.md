@@ -129,3 +129,14 @@
 - Commit 6bf4cde, tag v1.0.11. SHA-256 gói: f89a31a9fa0e512e76225e0572d37a58e46e9e00ceb1e045d75a4f5440180d52.
 - Workflow run 40496406950 completed success.
 - GitHub Release v1.0.11: https://github.com/namthanh0194/Shared-Drive-Backup/releases/tag/v1.0.11
+
+## 2026-10-27 — Sửa native Database Type và dọn snapshot có xác nhận (DEV)
+
+- Người dùng duyệt sửa format Database, cập nhật bản ghi hiện tại sql_nam_com và phân biệt/dọn snapshot sau nghiệm thu. Chọn phương án nút xác nhận, không tự áp thời hạn xoá 3–7 ngày hoặc xoá snapshot production hiện hữu.
+- Đối chiếu chỉ đọc parser `view-database.js`: Type lấy phần đầu filename và File name lấy phần sau. Format đúng là `shared_drive_backup|<archive-name.sql.gz>`; không dùng `provider|remote_id|filename` vì còn lộ ID trong File name. Giữ canonical provider để View mở đúng plugin; ID Drive vẫn ở history. Không thay format website.
+- Native registration/migration và gỡ dòng đã trash chỉ nhận exact legacy/new filename cùng ownership plugin/VPS/job. Có regression giữ ID/count, chống sửa remote/path/provider lạ.
+- Lịch sử phân biệt snapshot trước import với tải về/SQL tạm; flag dọn staging chỉ được ghi khi rmtree thành công, lỗi dọn hiện cảnh báo riêng và không đổi import thành công thành thất bại.
+- Thêm endpoint allowlist `cleanup_database_snapshots` chỉ nhận job_id/confirmation; yêu cầu `DELETE <restore-job-id>`, tạo worker bất đồng bộ. Worker kiểm tra lại job/kết quả complete/khoá/journal/đường dẫn/file lạ/symlink/checksum trước xoá, không rmtree snapshot hoặc gọi MySQL/Drive. Lỗi I/O giữa chừng giữ phần còn lại, có thể xác nhận dọn lại; hoàn tất mới đánh dấu nguồn đã dọn.
+- Bằng chứng TDD: regression native Type/legacy/ownership thất bại trước sửa; 11 regression snapshot ban đầu thiếu feature; Playwright snapshot ban đầu sai nhãn. Sau sửa toàn bộ 158 Python tests OK, Playwright snapshot UI + Database UI + browser suite + 112 popup/viewport/theme cases đạt. `node --check ui.js`, `git diff --check` đạt; test/ảnh/log nằm trong ignored tmp/, toàn bộ dump/import/Drive của test là fixture.
+- Theo phạm vi đã duyệt, chạy dry-run rồi migration metadata thật cho sql_nam_com: sửa 2 dòng backup id 10015/10016, giữ nguyên ID/count và toàn bộ cột khác filename. Audit root-only before/after: `tmp/native-database-type-audit-1793103231304609239.json`. Không đọc credentials, gọi Google, chạy dump/import/restore hoặc đổi Cron thật.
+- SHA-256 đối chiếu trước/sau của data_v2.py, database_v2.py, crontab_v2.py và view-database.js đều khớp. Không sửa core/schema hoặc restart panel. Không xoá snapshot production, không deploy source mới, tăng version, commit/push hoặc phát hành. Cần phát hành/cập nhật plugin để format được áp dụng cho backup tương lai và nút dọn snapshot xuất hiện trong aaPanel.

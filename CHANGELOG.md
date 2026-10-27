@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.12 — 2026-10-27
+
+- Sửa Type/tên file trong danh sách backup Database aaPanel: dùng định dạng provider trước tên archive, giữ nguyên định danh plugin và format website; hỗ trợ chuyển đổi bản ghi cũ đúng ownership mà không đổi ID/số đếm.
+- Phân biệt snapshot trước khôi phục với file tải về/SQL tạm; ghi nhận kết quả dọn file tạm thực tế và cảnh báo nếu dọn lỗi.
+- Thêm nút Dọn snapshot sau nghiệm thu với xác nhận theo mã tác vụ; worker kiểm tra checksum/đường dẫn/khoá/journal, không dọn snapshot tác vụ lỗi và không xoá dữ liệu MySQL/Drive.
+
 ## 1.0.11 — 2026-10-27
 
 - Đồng bộ backup MySQL đã xác minh vào cột Backup trang Databases aaPanel, đúng ID database, cho backup đơn lẻ và từng thành viên của đợt.

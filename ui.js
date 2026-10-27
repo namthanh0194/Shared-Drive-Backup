@@ -10,6 +10,7 @@
   const phases = { preflight: 'kiểm tra', archive: 'nén', upload: 'upload', retention: 'giữ bản', download: 'tải về', validate: 'kiểm tra archive', extract: 'giải nén', snapshot: 'tạo bản dự phòng', activate: 'thay thế webroot', complete: 'hoàn tất' };
   const kinds = { site: 'Website', database: 'MySQL', path: 'Thư mục', download: 'Tải kiểm tra', restore: 'Khôi phục' };
   kinds.database_set = 'Đợt backup MySQL'; kinds.database_restore = 'Khôi phục MySQL';
+  kinds.database_snapshot_cleanup = 'Dọn snapshot MySQL';
   phases.import = 'nhập SQL';
   const databaseState = { inventory: null, catalog: null, offset: 0, next: null, sequence: 0 };
   function text(id, value) { find(id).textContent = value == null ? '—' : String(value); }
@@ -151,7 +152,33 @@
     renderJobs(find('recent-rows'), result.history, false);
     return result;
   }
-  async function loadHistory() { const result = await api('history'); state.jobs = result.jobs; renderJobs(find('history-rows'), result.jobs, true); result.jobs.forEach((job, index) => { if (!['restore', 'database_restore', 'database_set'].includes(job.details.kind)) return; const cell = find('history-rows').rows[index].cells[0]; [['restore_path', 'Kết quả'], ['snapshot', 'Snapshot trước khôi phục'], ['previous_path', 'Thư mục cũ'], ['current_database', 'Database đang xử lý']].forEach(([key, label]) => { if (job.details[key]) cell.append(element('small', label + ': ' + job.details[key])); }); (job.details.snapshots || []).forEach(item => cell.append(element('small', 'Snapshot ' + item.name + ': ' + item.snapshot))); (job.details.results || []).forEach(item => cell.append(element('small', item.name + ': ' + item.state))); if (job.details.kind === 'database_set') cell.append(element('strong', job.details.complete ? 'Đợt đã hoàn tất và xác minh' : 'Đợt chưa hoàn tất — không dùng như bản full')); if (job.details.recovery_required) cell.append(element('strong', 'Có journal chưa hoàn tất. Không chạy lại; kiểm tra phục hồi trước.')); }); }
+  async function loadHistory() {
+    const result = await api('history'); state.jobs = result.jobs;
+    renderJobs(find('history-rows'), result.jobs, true);
+    result.jobs.forEach((job, index) => {
+      const details = job.details;
+      if (!['restore', 'database_restore', 'database_set', 'database_snapshot_cleanup'].includes(details.kind)) return;
+      const row = find('history-rows').rows[index];
+      const cell = row.cells[0];
+      [['restore_path', 'Kết quả'], ['snapshot', 'Snapshot trước khôi phục'], ['previous_path', 'Thư mục cũ'], ['current_database', 'Database đang xử lý']].forEach(([key, label]) => { if (details[key]) cell.append(element('small', label + ': ' + details[key])); });
+      if (details.snapshots_cleaned) cell.append(element('small', 'Snapshot trước khôi phục đã dọn theo xác nhận của bạn.'));
+      else (details.snapshots || []).forEach(item => cell.append(element('small', 'Snapshot trước khôi phục ' + item.name + ' (không phải file tải về; giữ để phục hồi nếu cần): ' + item.snapshot)));
+      if (details.temporary_files_cleaned === true) cell.append(element('small', 'File tải về và SQL tạm đã dọn.'));
+      if (details.cleanup_warning) cell.append(element('strong', details.cleanup_warning));
+      (details.results || []).forEach(item => cell.append(element('small', item.name + ': ' + item.state)));
+      if (details.kind === 'database_set') cell.append(element('strong', details.complete ? 'Đợt đã hoàn tất và xác minh' : 'Đợt chưa hoàn tất — không dùng như bản full'));
+      if (details.recovery_required) cell.append(element('strong', 'Có journal chưa hoàn tất. Không chạy lại; kiểm tra phục hồi trước.'));
+      if (details.kind === 'database_snapshot_cleanup' && job.status === 'success') cell.append(element('small', 'Đã dọn ' + details.removed_files + ' snapshot, giải phóng ' + formatSize(details.freed_bytes)));
+      if (details.kind === 'database_restore' && job.status === 'success' && details.phase === 'complete' && !details.recovery_required && !details.snapshots_cleaned && details.snapshots && details.snapshots.length && details.results && details.results.length === details.snapshots.length && details.results.every(item => item.state === 'complete')) {
+        row.cells[4].append(button('Dọn snapshot', event => action(event.currentTarget, async () => {
+          let cleanup;
+          const confirmation = 'DELETE ' + job.id;
+          const accepted = await confirmAction({ title: 'Xoá snapshot trước khôi phục', message: 'Chỉ tiếp tục sau khi đã nghiệm thu dữ liệu ứng dụng. Xoá các snapshot local của tác vụ này sẽ mất bản dữ liệu trước khôi phục. Không xoá Drive hoặc thay MySQL; không dọn tác vụ lỗi/còn journal. Nhập: ' + confirmation, confirmation, confirmLabel: 'Đã nghiệm thu — dọn snapshot' }, async () => { cleanup = await api('cleanup_database_snapshots', { job_id: job.id, confirmation: find('confirm-input').value }); });
+          if (accepted) { message('Đã tạo tác vụ dọn snapshot: ' + cleanup.job_id + '. Theo dõi kết quả trong Lịch sử.', false); await loadHistory(); }
+        }).catch(() => {})));
+      }
+    });
+  }
 
   function databaseCheckbox(container, name, description, checked, disabled = false) {
     const label = element('label', null, 'sdb-db-choice');
