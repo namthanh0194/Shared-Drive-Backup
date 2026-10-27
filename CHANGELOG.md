@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.10 — 2026-10-27
+
+- Thêm tab Database: liên kết website/database rõ ràng; backup MySQL theo đợt với dump riêng và manifest đã xác minh, giữ file còn được đợt tham chiếu.
+- Khôi phục database theo website, từng database hoặc toàn bộ đợt hoàn chỉnh; xác minh nguồn, snapshot mọi đích trước khi thay thế, journal và công cụ phục hồi snapshot khi lỗi.
+- Chặn gửi credentials/token qua HTTP; chặn job mới và installer tại chỗ khi còn journal phục hồi. Không tự triển khai hoặc đổi lịch Cron.
+
 ## 1.0.9 — 2026-10-27
 
 - Tích hợp danh sách backup vào Backup / Restore website của aaPanel: hiển thị đúng website (pid) và bản remote theo cấu trúc core aaPanel. Thao tác remote mở plugin để khôi phục.

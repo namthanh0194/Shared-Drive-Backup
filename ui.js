@@ -9,6 +9,9 @@
   const labels = { queued: 'Chờ chạy', running: 'Đang chạy', success: 'Thành công', failed: 'Thất bại' };
   const phases = { preflight: 'kiểm tra', archive: 'nén', upload: 'upload', retention: 'giữ bản', download: 'tải về', validate: 'kiểm tra archive', extract: 'giải nén', snapshot: 'tạo bản dự phòng', activate: 'thay thế webroot', complete: 'hoàn tất' };
   const kinds = { site: 'Website', database: 'MySQL', path: 'Thư mục', download: 'Tải kiểm tra', restore: 'Khôi phục' };
+  kinds.database_set = 'Đợt backup MySQL'; kinds.database_restore = 'Khôi phục MySQL';
+  phases.import = 'nhập SQL';
+  const databaseState = { inventory: null, catalog: null, offset: 0, next: null, sequence: 0 };
   function text(id, value) { find(id).textContent = value == null ? '—' : String(value); }
   function message(value, error) { const area = find('message'); area.hidden = !value; area.textContent = value || ''; area.dataset.error = String(Boolean(error)); }
   function pickerError(error) { find('picker-error').hidden = !error; find('picker-error').textContent = error ? error.message || String(error) : ''; }
@@ -103,6 +106,7 @@
     });
   }
   async function api(method, args) {
+    if (!secure && ['save_credentials', 'save_github_token'].includes(method)) throw new Error('Cần HTTPS để gửi thông tin xác thực. Có thể nhập qua SSH nếu panel chạy HTTP.');
     const data = Object.assign({}, args || {});
     if (window.$ && window.$.ajax) {
       return new Promise((resolve, reject) => window.$.ajax({ type: 'POST', url: '/plugin?action=a&s=' + encodeURIComponent(method) + '&name=shared_drive_backup', data: data, dataType: 'json', timeout: 190000, success(response) { if (!response || response.status !== true) { reject(new Error(response && response.msg || 'Backend trả về lỗi.')); return; } resolve(response.data); }, error(xhr) { reject(new Error('Không gọi được plugin, HTTP ' + xhr.status + '. Kiểm tra đăng nhập aaPanel.')); } }));
@@ -123,6 +127,7 @@
     if (name === 'cron') loadTasks().catch(error => message(error.message, true));
     if (name === 'backup') loadInventory().catch(error => message(error.message, true));
     if (name === 'restore') loadRestoreSites().catch(error => message(error.message, true));
+    if (name === 'databases') loadDatabaseCatalog().catch(error => message(error.message, true));
   }
   function statusNode(job) { const node = element('span', labels[job.status] || job.status, 'sdb-state sdb-state-' + job.status); if (job.status === 'running') node.textContent += ' · ' + (phases[job.details.phase] || job.details.phase || '') + (['upload', 'download', 'extract'].includes(job.details.phase) ? ' ' + (job.details.progress || 0) + '%' : ''); return node; }
   function renderJobs(target, jobs, detailed) {
@@ -146,7 +151,107 @@
     renderJobs(find('recent-rows'), result.history, false);
     return result;
   }
-  async function loadHistory() { const result = await api('history'); state.jobs = result.jobs; renderJobs(find('history-rows'), result.jobs, true); result.jobs.forEach((job, index) => { if (job.details.kind !== 'restore') return; const cell = find('history-rows').rows[index].cells[0]; [['restore_path', 'Kết quả'], ['snapshot', 'Snapshot trước khôi phục'], ['previous_path', 'Thư mục cũ']].forEach(([key, label]) => { if (job.details[key]) cell.append(element('small', label + ': ' + job.details[key])); }); if (job.details.recovery_required) cell.append(element('strong', 'Có journal chưa hoàn tất. Không chạy lại; kiểm tra phục hồi trước.')); }); }
+  async function loadHistory() { const result = await api('history'); state.jobs = result.jobs; renderJobs(find('history-rows'), result.jobs, true); result.jobs.forEach((job, index) => { if (!['restore', 'database_restore', 'database_set'].includes(job.details.kind)) return; const cell = find('history-rows').rows[index].cells[0]; [['restore_path', 'Kết quả'], ['snapshot', 'Snapshot trước khôi phục'], ['previous_path', 'Thư mục cũ'], ['current_database', 'Database đang xử lý']].forEach(([key, label]) => { if (job.details[key]) cell.append(element('small', label + ': ' + job.details[key])); }); (job.details.snapshots || []).forEach(item => cell.append(element('small', 'Snapshot ' + item.name + ': ' + item.snapshot))); (job.details.results || []).forEach(item => cell.append(element('small', item.name + ': ' + item.state))); if (job.details.kind === 'database_set') cell.append(element('strong', job.details.complete ? 'Đợt đã hoàn tất và xác minh' : 'Đợt chưa hoàn tất — không dùng như bản full')); if (job.details.recovery_required) cell.append(element('strong', 'Có journal chưa hoàn tất. Không chạy lại; kiểm tra phục hồi trước.')); }); }
+
+  function databaseCheckbox(container, name, description, checked, disabled = false) {
+    const label = element('label', null, 'sdb-db-choice');
+    const input = element('input'); input.type = 'checkbox'; input.value = name; input.checked = checked; input.disabled = disabled;
+    const content = element('span', name); if (description) content.append(element('small', description));
+    label.append(input, content); container.append(label); return input;
+  }
+  function checkedDatabases(id) { return Array.from(find(id).querySelectorAll('input:checked:not(:disabled)'), input => input.value); }
+  function databaseSelectionChanged() {
+    const names = checkedDatabases('db-restore-options');
+    const entries = databaseState.catalog ? databaseState.catalog.entries.filter(entry => names.includes(entry.name)) : [];
+    const sites = [...new Set(entries.flatMap(entry => entry.sites))].sort();
+    text('db-selection-summary', names.length ? names.length + ' database sẽ ghi đè: ' + names.join(', ') + '. Website bị ảnh hưởng: ' + (sites.join(', ') || 'Chưa liên kết — phải tự xác định và dừng mọi nguồn ghi.') : 'Chưa chọn database.');
+    find('db-restore').disabled = !names.length;
+    const available = databaseState.catalog ? databaseState.catalog.entries.filter(entry => entry.available).length : 0;
+    find('db-restore-all').checked = Boolean(databaseState.catalog && databaseState.catalog.complete && available > 0 && names.length === available);
+    find('db-restore-all').indeterminate = names.length > 0 && !find('db-restore-all').checked;
+  }
+  function renderDatabaseLinks() {
+    const current = databaseState.inventory;
+    const names = (current.links || {})[find('db-link-site').value] || [];
+    find('db-link-options').replaceChildren();
+    current.databases.forEach(item => databaseCheckbox(find('db-link-options'), item.name, '', names.includes(item.name)));
+  }
+  function renderDatabaseInventory(current) {
+    databaseState.inventory = current;
+    const previousSite = find('db-link-site').value;
+    const select = find('db-link-site'); select.replaceChildren(element('option', 'Chọn website…')); select.firstChild.value = '';
+    current.sites.forEach(site => { const option = element('option', site.name); option.value = site.name; select.append(option); });
+    (current.stale_links || []).filter(name => !current.sites.some(site => site.name === name)).forEach(name => { const option = element('option', name + ' · đã xóa, lưu rỗng để bỏ liên kết'); option.value = name; select.append(option); });
+    select.value = previousSite;
+    text('db-stale', 'Liên kết đã thay đổi, cần xác nhận/lưu lại: ' + (current.stale_links || []).join(', ')); find('db-stale').hidden = !(current.stale_links || []).length;
+    renderDatabaseLinks();
+    const selected = checkedDatabases('db-backup-options');
+    find('db-backup-options').replaceChildren();
+    current.databases.forEach(item => databaseCheckbox(find('db-backup-options'), item.name, Object.keys(current.links || {}).filter(site => current.links[site].includes(item.name)).join(', ') || 'Chưa liên kết website', selected.includes(item.name)));
+    find('db-backup').disabled = !checkedDatabases('db-backup-options').length;
+  }
+  async function loadDatabaseCatalog(offset = databaseState.offset) {
+    const sequence = ++databaseState.sequence;
+    text('db-status', 'Đang tải danh sách database và các đợt backup…');
+    find('db-restore').disabled = true;
+    const result = await api('database_catalog', { offset });
+    if (sequence !== databaseState.sequence) return;
+    databaseState.offset = result.offset; databaseState.next = result.next_offset; databaseState.catalog = null;
+    renderDatabaseInventory(result.inventory);
+    const select = find('db-backup-source'); select.replaceChildren(element('option', 'Chọn đợt / bản backup…')); select.firstChild.value = '';
+    result.backups.forEach(backup => { const option = element('option', date(backup.created) + ' · ' + backup.target + (backup.batch_id ? ' · Thành viên đợt chưa hoàn tất' : '') + (backup.complete ? '' : ' · CHƯA HOÀN TẤT') + (!backup.retained ? ' · Hết thời gian giữ' : '')); option.value = backup.id; option.disabled = !backup.retained; select.append(option); });
+    find('db-prev').disabled = !result.offset; find('db-next').disabled = result.next_offset == null;
+    find('db-restore-options').replaceChildren(); find('db-restore-site').disabled = true; find('db-restore-all').disabled = true; find('db-restore-all').checked = false; find('db-writers-stopped').checked = false;
+    databaseSelectionChanged();
+    text('db-status', result.inventory.databases.length + ' MySQL local · ' + result.backups.length + ' bản/đợt trên trang này. Chưa kết nối hoặc import MySQL khi chỉ xem danh sách.');
+  }
+  async function loadDatabaseMembers() {
+    const sequence = ++databaseState.sequence;
+    const backupId = find('db-backup-source').value;
+    databaseState.catalog = null; find('db-restore-options').replaceChildren(); find('db-restore-all').disabled = true; find('db-restore-site').disabled = true; find('db-writers-stopped').checked = false; databaseSelectionChanged();
+    if (!backupId) return;
+    text('db-status', 'Đang tải thành viên bản backup…');
+    const result = await api('database_catalog', { backup_id: backupId });
+    if (sequence !== databaseState.sequence) return;
+    databaseState.catalog = result;
+    result.entries.forEach(entry => databaseCheckbox(find('db-restore-options'), entry.name, (entry.sites.join(', ') || 'Chưa liên kết website') + ' · ' + formatSize(entry.size) + (entry.legacy ? ' · bản cũ, xác nhận đúng tên database' : '') + (entry.error ? ' · ' + entry.error : ''), false, !entry.available));
+    const select = find('db-restore-site'); select.replaceChildren(element('option', 'Chọn website hoặc chọn database riêng…')); select.firstChild.value = '';
+    [...new Set(result.entries.flatMap(entry => entry.sites))].sort().forEach(site => { const option = element('option', site); option.value = site; select.append(option); }); select.disabled = false;
+    find('db-restore-all').disabled = !result.complete || !result.entries.length || result.entries.some(entry => !entry.available);
+    text('db-status', (result.complete ? 'Bản backup hoàn tất. ' : 'Đợt chưa hoàn tất: chỉ chọn riêng các database đã thành công. ') + 'Worker sẽ kiểm tra Drive/checksum trước khi snapshot và import.');
+  }
+  bind('db-refresh', event => action(event.currentTarget, () => loadDatabaseCatalog()));
+  bind('db-prev', event => action(event.currentTarget, () => loadDatabaseCatalog(Math.max(0, databaseState.offset - 20))));
+  bind('db-next', event => action(event.currentTarget, () => loadDatabaseCatalog(databaseState.next)));
+  find('db-link-site').addEventListener('change', renderDatabaseLinks);
+  find('db-backup-source').addEventListener('change', () => loadDatabaseMembers().catch(error => message(error.message, true)));
+  find('db-backup-options').addEventListener('change', () => { const count = checkedDatabases('db-backup-options').length; find('db-backup').disabled = !count; find('db-backup-all').checked = count > 0 && count === databaseState.inventory.databases.length; find('db-backup-all').indeterminate = count > 0 && count < databaseState.inventory.databases.length; });
+  find('db-backup-all').addEventListener('change', event => { find('db-backup-options').querySelectorAll('input').forEach(input => { input.checked = event.target.checked; }); find('db-backup').disabled = !checkedDatabases('db-backup-options').length; });
+  find('db-restore-options').addEventListener('change', databaseSelectionChanged);
+  find('db-restore-all').addEventListener('change', event => { find('db-restore-options').querySelectorAll('input:not(:disabled)').forEach(input => { input.checked = event.target.checked; }); databaseSelectionChanged(); });
+  find('db-restore-site').addEventListener('change', event => { const site = event.target.value; find('db-restore-options').querySelectorAll('input:not(:disabled)').forEach(input => { input.checked = databaseState.catalog.entries.some(entry => entry.name === input.value && entry.sites.includes(site)); }); databaseSelectionChanged(); });
+  bind('db-save-links', event => action(event.currentTarget, async () => {
+    const site = find('db-link-site').value; if (!site) throw new Error('Chọn website cần liên kết trước.');
+    const names = checkedDatabases('db-link-options');
+    if (!await confirmAction({ title: 'Xác nhận liên kết database', message: site + ': ' + (names.join(', ') || 'Bỏ liên kết database') + '. Không sửa database, website hoặc mật khẩu.', confirmLabel: 'Lưu liên kết' })) return;
+    renderDatabaseInventory(await api('save_database_links', { links: JSON.stringify({ [site]: names }) }));
+    databaseState.catalog = null; find('db-restore-options').replaceChildren(); databaseSelectionChanged();
+    text('db-status', 'Đã lưu liên kết. Chọn lại bản backup trước khi khôi phục.');
+  }));
+  bind('db-backup', event => action(event.currentTarget, async () => {
+    const names = checkedDatabases('db-backup-options'); if (!names.length) throw new Error('Chọn database cần backup.');
+    if (!await confirmAction({ title: 'Backup database theo đợt', message: 'Backup ' + names.length + ' database: ' + names.join(', ') + '. Mỗi database có file riêng; chỉ đánh dấu đợt hoàn tất sau khi tất cả được xác minh.', confirmLabel: 'Backup đã chọn' })) return;
+    const result = await api('start_database_backup', { database_names: JSON.stringify(names), keep: find('db-keep').value }); message('Đã tạo đợt backup ' + result.job_id, false); showTab('history');
+  }));
+  bind('db-restore', event => action(event.currentTarget, async () => {
+    const names = checkedDatabases('db-restore-options'); const catalog = databaseState.catalog;
+    if (!catalog || !names.length || !find('db-writers-stopped').checked) throw new Error('Chọn database và xác nhận đã dừng mọi nguồn ghi trước.');
+    const confirmation = 'RESTORE ' + names.length + ' DATABASES';
+    const accepted = await confirmAction({ title: 'Ghi đè database MySQL', message: find('db-selection-summary').textContent + ' Tạo snapshot local trước khi import. Không tự rollback cả đợt nếu lỗi. Nhập: ' + confirmation, confirmation, confirmLabel: 'Snapshot và khôi phục' }, async () => {
+      const result = await api('start_database_restore', { backup_id: catalog.id, database_names: JSON.stringify(names), confirmation, writers_stopped: '1' }); message('Đã tạo tác vụ khôi phục database ' + result.job_id + '. Theo dõi Lịch sử; không bật nguồn ghi cho đến khi xác minh kết quả.', false);
+    });
+    if (accepted) showTab('history');
+  }));
   async function loadRestoreSites() {
     const previous = find('restore-site').value;
     const result = await api('restore_sites');
@@ -315,16 +420,16 @@
         headerUpdate.textContent = 'Đã cập nhật';
       }
       find('update-banner').hidden = true;
-      text('update-status', 'Đã cập nhật. Đóng và mở lại plugin để nạp giao diện mới.');
-    }, 'Đã cập nhật. Đóng và mở lại plugin.'));
+      text('update-status', 'Đã cập nhật xong. Đang tải lại trang…');
+    }, 'Đã cập nhật xong. Đang tải lại…'));
     if (updated) {
       text('version', 'v' + release.version);
       text('current-version', release.version);
-      await refresh().catch(error => message('Đã cập nhật. Không làm mới được trạng thái: ' + error.message + '. Đóng và mở lại plugin.', true));
+      setTimeout(() => { window.location.reload(); }, 1200);
     }
   }
   bind('header-update', event => triggerUpdate(event.currentTarget));
-  bind('rollback', async event => { const control = event.currentTarget; if (!await confirmAction({ title: 'Khôi phục phiên bản', message: 'Khôi phục mã phiên bản trước, giữ dữ liệu và cấu hình?', confirmLabel: 'Khôi phục' })) return; await action(control, async () => { await api('rollback'); await refresh(); }, 'Đã rollback. Đóng và mở lại plugin.'); });
+  bind('rollback', async event => { const control = event.currentTarget; if (!await confirmAction({ title: 'Khôi phục phiên bản', message: 'Khôi phục mã phiên bản trước, giữ dữ liệu và cấu hình?', confirmLabel: 'Khôi phục' })) return; await action(control, async () => { await api('rollback'); setTimeout(() => { window.location.reload(); }, 1200); }, 'Đã rollback. Đang tải lại…'); });
   bind('repair-integration', event => action(event.currentTarget, async () => { const result = await api('repair_integration'); await refresh(); if (result.restart_panel_required) message('Adapter đã sửa. Cần nạp lại dịch vụ panel để backend nhận thay đổi; không cần restart OLS.', false); }));
   function syncTheme() {
     try {
@@ -368,6 +473,9 @@
   window.addEventListener('storage', event => { if (event.key === 'ThemeStore') syncTheme(); });
   bind('theme', () => { root.classList.toggle('sdb-light'); syncModalTheme(); });
   find('http-warning').hidden = secure;
+  find('save-credentials').disabled = !secure;
+  find('credential-file').disabled = !secure;
+  if (!secure) text('http-warning', 'Panel đang chạy HTTP: không gửi credentials/token qua trình duyệt. Bật HTTPS hoặc dùng CLI import qua SSH.');
   let modalLayoutFrame;
   function adjustModalPosition() {
     if (modalLayoutFrame) return;

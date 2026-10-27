@@ -14,6 +14,8 @@ from sdb.panel import Panel
 from sdb.storage import Store, file_lock, safe_error
 from sdb.worker import ensure_ready, run_backup, run_download, validate_exclusions
 from sdb.restore import run_restore
+from sdb.databases import prepare_backup, run_backup_set, run_restore as run_database_restore
+from sdb.storage import assert_recovery_clear
 
 
 def cron_backup(store, kind, target, keep, echo=''):
@@ -27,7 +29,15 @@ def cron_backup(store, kind, target, keep, echo=''):
         raise ValueError('Chưa hỗ trợ lịch theo giây hoặc database không phải MySQL local.')
     if cron and kind == 'database' and (cron.get('split_type') or str(cron.get('table_list') or '') not in {'', '[]', 'null'}):
         raise ValueError('Chưa hỗ trợ split backup hoặc chọn từng bảng. Hãy chọn backup toàn database MySQL local.')
-    exclusions = validate_exclusions((cron.get('sBody', '') or '').splitlines() if cron else [])
+    body = (cron.get('sBody', '') or '').strip() if cron else ''
+    if 'bash -c ' in body:
+        import re
+        match = re.search(r"bash\s+-c\s+'(.*)'", body, re.DOTALL) or re.search(r'bash\s+-c\s+"(.*)"', body, re.DOTALL)
+        body = match.group(1).strip() if match else body
+    elif "<<'EOF'" in body:
+        parts = body.split("<<'EOF'")
+        body = parts[1].split('EOF')[0].strip() if len(parts) > 1 else body
+    exclusions = validate_exclusions(body.splitlines() if body else [])
     if cron and (cron['sType'] != kind or cron['sName'] != target):
         raise ValueError('Thông số không trùng tác vụ Cron đã lưu.')
     configuration, client = ensure_ready(store)
@@ -39,6 +49,10 @@ def cron_backup(store, kind, target, keep, echo=''):
         targets = [name for name in target.split(',') if name]
     if not targets:
         raise ValueError('Không có nguồn phù hợp cho tác vụ Cron.')
+    if kind == 'database' and (target == 'ALL' or ',' in target):
+        details = prepare_backup(store, panel, 'ALL' if target == 'ALL' else targets, int(keep), 'cron', echo)
+        details['keep_local'] = bool(cron and int(cron.get('save_local') or 0))
+        return run_backup_set(store, store.new_job(details), panel)
     success = True
     for item in targets:
         details = {'kind': kind, 'target': item, 'keep': int(keep), 'exclusions': exclusions, 'destination': configuration['folder_id'], 'origin': 'cron', 'cron_echo': echo, 'keep_local': bool(cron and int(cron.get('save_local') or 0))}
@@ -64,6 +78,8 @@ def main():
             return 0 if (run_backup if operation == 'backup' else run_download)(store, sys.argv[2]) else 1
         if operation == 'restore':
             return 0 if run_restore(store, sys.argv[2]) else 1
+        if operation in {'database_backup', 'database_restore'}:
+            return 0 if (run_backup_set if operation == 'database_backup' else run_database_restore)(store, sys.argv[2]) else 1
         if operation in {'site', 'path', 'database'}:
             return 0 if cron_backup(store, operation, sys.argv[2], sys.argv[3], sys.argv[4] if len(sys.argv) > 4 else '') else 1
         if operation in {'register', 'unregister'}:
@@ -74,6 +90,7 @@ def main():
             document = json.loads(Path(sys.argv[2]).read_text())
             validate_credentials(document)
             with file_lock(store.data / 'operation.lock'):
+                assert_recovery_clear(store)
                 store.save_secret('credentials', document)
                 store.save_config({'configured': False})
             print('Đã nhập credentials an toàn. Mở plugin để chọn Shared drive và thư mục.')
@@ -83,6 +100,7 @@ def main():
             if not re.fullmatch(r'[A-Za-z0-9_]{20,255}', token):
                 raise ValueError('GitHub token không hợp lệ.')
             with file_lock(store.data / 'operation.lock'):
+                assert_recovery_clear(store)
                 store.save_secret('github_token', token)
             print('Đã lưu GitHub token. Không hiển thị lại secret.')
             return 0

@@ -60,6 +60,51 @@ Transfer the generated `authorized_user` file securely and import as above. This
 
 Remote layout: selected folder → `VPS-<stable server ID>` → `<kind>-<source/destination/task hash>` → timestamped archive. Each native Cron schedule has its own namespace; manual runs are separate from Cron retention. Each VPS generates its own ID. Never clone production `data/` onto another VPS, or both could share retention ownership.
 
+## Backup theo đợt và khôi phục database (DEV, chưa phát hành)
+
+Tab **Database** bổ sung backup/restore MySQL độc lập với khôi phục file website. Mã DEV không tự cài vào production. Giao diện và backend đều từ chối gửi credentials/token qua HTTP; dùng HTTPS hoặc CLI import qua SSH.
+
+### Liên kết website và database
+
+- Mở mục **Xác nhận website sử dụng database nào**, chọn website và các database local tương ứng rồi xác nhận lưu. Không đọc mật khẩu trong mã website và không tự đoán bằng tên.
+- Một website có thể dùng nhiều database; một database có thể dùng chung giữa nhiều website. Chọn theo website sẽ chọn các database liên quan và hiển thị tất cả website bị ảnh hưởng, kể cả website không được chọn trực tiếp.
+- Liên kết giữ ID/tên database và ID/tên/đường dẫn website. Nếu thay đổi thì phải xác nhận lại; liên kết lỗi chặn khôi phục. Bỏ chọn tất cả rồi lưu chỉ bỏ liên kết của website đó, không xóa dữ liệu.
+- Chỉ hỗ trợ database ứng dụng MySQL local hiện có trong aaPanel, tối đa 500 database mỗi yêu cầu. Không backup/restore `mysql`, `sys`, `information_schema`, `performance_schema`, tài khoản/quyền MySQL hoặc database từ xa.
+
+### Backup tất cả hoặc chọn riêng
+
+1. Chọn tất cả database local hoặc đánh dấu từng database, chọn số đợt giữ lại và xác nhận backup.
+2. Worker chạy tuần tự, mỗi database có một `.sql.gz` và checksum riêng; không gộp tất cả thành một SQL lớn. Đợt chỉ hoàn tất khi mọi thành viên đã được upload/xác minh và manifest JSON cũng đã được upload/xác minh.
+3. Đợt lỗi được ghi rõ là chưa hoàn tất; các thành viên đã xác minh vẫn được giữ. Không giả một đợt thiếu thành bản full.
+4. Khi dọn Drive đang tắt, giữ mọi đợt. Khi bật, retention của manifest áp dụng số đợt giữ lại; file thành viên vẫn được bảo vệ cho đến khi manifest tương ứng thực sự không còn trên Drive. Các bản của đợt lỗi được giữ để tránh mất dữ liệu, không tự dọn như một đợt hoàn chỉnh.
+
+Cron aaPanel `Database → ALL` hoặc nhiều tên database cũng tạo một đợt, giữ namespace Cron/ownership/nơi lưu hiện có. Không tự tạo hoặc đổi lịch Cron thật. Một đợt là tập hợp các thời điểm dump riêng, **không phải snapshot transaction chung giữa nhiều database**; `--single-transaction` không bảo đảm nhất quán cho bảng không hỗ trợ transaction hoặc khi có DDL đồng thời.
+
+### Khôi phục toàn bộ hoặc theo website/database
+
+1. Chọn một đợt/bản backup từ lịch sử plugin; chọn nhanh theo website, chọn riêng database hoặc chọn tất cả trong một đợt hoàn chỉnh. Bản cũ chưa lưu ID database cần xác nhận đúng tên đích; không tự ánh xạ sang tên khác. Danh sách không tự khám phá manifest của VPS khác hoặc phục hồi lịch sử local đã mất.
+2. Dừng website liên quan trong aaPanel và tự dừng worker/Cron/ứng dụng ngoài panel đang ghi dữ liệu. Với database chưa liên kết, quản trị viên phải tự xác định mọi bên sử dụng. Nếu dump/snapshot chứa EVENT thì `event_scheduler` phải đang OFF/DISABLED; plugin chỉ kiểm tra, không tự đổi cấu hình toàn cục.
+3. Đánh dấu đã dừng nguồn ghi và nhập đúng `RESTORE N DATABASES`. Backend kiểm tra lại lựa chọn, ID database, nơi lưu và website liên quan; worker xác minh ownership/checksum của manifest và từng file trước khi ghi dữ liệu.
+4. Tải và giải nén có giới hạn, kiểm tra gzip/định dạng `CREATE DATABASE` và `USE` đúng tên nguồn; kiểm tra đĩa chứa MySQL. Dump có thao tác trạng thái toàn cục như GTID_PURGED bị từ chối, không tự sửa SQL. Backup mới tắt GTID_PURGED khi mysqldump hỗ trợ tùy chọn đó.
+5. **Tạo và kiểm tra snapshot của tất cả database đích trước khi import bất kỳ database nào.** Snapshot nằm tại `data/database-snapshots/<job-id>/`, root-only; không tự xóa theo retention Drive.
+6. Sau khi ghi journal bền vững, import sẽ **DROP và tạo lại đúng database đích** từ dump để không giữ các bảng phát sinh sau bản backup. Không xóa tài khoản hoặc thay GRANT. SQL là nội dung thực thi được tin cậy từ backup của plugin; checksum không biến nó thành sandbox. Không nhận SQL tùy ý hoặc URL ngoài.
+7. Một mục lỗi sẽ dừng đợt; các mục đã import không tự rollback. Giữ snapshot và journal, hiển thị kết quả từng database trong Lịch sử. Chỉ bật lại nguồn ghi sau khi quản trị viên xác minh dữ liệu ứng dụng.
+
+MySQL client chạy qua socket local, dùng file tùy chọn 0600 thay vì mật khẩu trên command line, không bật LOCAL INFILE hoặc `--force`; không ghi SQL/password/stderr MySQL vào log. Việc restore có thể thất bại do phiên bản MySQL/MariaDB, collation, DEFINER hoặc đối tượng phụ thuộc chéo database; không hứa tự chuyển đổi mọi định dạng hoặc rollback transaction cả đợt.
+
+### Journal và phục hồi snapshot
+
+`database-recovery.json`, journal khôi phục website hoặc deployment chưa xử lý sẽ chặn tác vụ mới, thay cấu hình và cài đặt/cập nhật. Không xóa journal chỉ để chạy lại. Sau khi kiểm tra tình trạng và dừng mọi nguồn ghi, dùng công cụ trên bản plugin đã cài; thay `JOB_ID` bằng mã 32 ký tự của tác vụ:
+
+```sh
+/www/server/panel/pyenv/bin/python -B /www/server/panel/plugin/shared_drive_backup/tools/recover_database.py status
+/www/server/panel/pyenv/bin/python -B /www/server/panel/plugin/shared_drive_backup/tools/recover_database.py rollback --job JOB_ID --confirm "ROLLBACK JOB_ID" --writers-stopped
+```
+
+Rollback kiểm tra checksum/đường dẫn snapshot và ID database rồi khôi phục các mục có thể đã bị thay đổi. Nếu lỗi, journal vẫn được giữ. Chỉ khi đã tự xác minh và quyết định chấp nhận trạng thái dữ liệu hiện tại mới dùng `accept --job JOB_ID --confirm "ACCEPT JOB_ID"`; thao tác này **không phục hồi dữ liệu**, chỉ ghi nhận quyết định và gỡ chặn journal database.
+
+Kiểm thử DEV dùng MySQL/Drive giả lập, không chứng minh import thành công trên mọi phiên bản MySQL thật. Chưa chạy restore trên database thật hoặc triển khai production trong thay đổi này.
+
 ## Website restore and native Backup / Restore (DEV, unreleased)
 
 This feature is in DEV only; installed v1.0.8 stays unchanged until a separately approved release/update. It restores **PHP website files/code**, not databases, OLS settings, SSL certificates or DNS.

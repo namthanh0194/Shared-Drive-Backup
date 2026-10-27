@@ -39,6 +39,28 @@ class Panel:
             return target
         raise ValueError('Loại backup không hợp lệ.')
 
+    def database_identity(self, name):
+        self.source('database', name)
+        with self.connect() as connection:
+            rows = connection.execute("SELECT id,name FROM databases WHERE name=? AND LOWER(type)='mysql' AND (sid IS NULL OR sid=0)", (name,)).fetchall()
+        if len(rows) != 1:
+            raise ValueError('Không xác định được duy nhất database MySQL local trong aaPanel.')
+        return dict(rows[0])
+
+    def site_identity(self, name):
+        with self.connect() as connection:
+            row = connection.execute('SELECT id,name,path FROM sites WHERE name=?', (name,)).fetchone()
+        if row is None:
+            raise ValueError('Website không còn tồn tại trong aaPanel.')
+        return dict(row)
+
+    def stopped_sites(self, names):
+        with self.connect() as connection:
+            for name in names:
+                row = connection.execute('SELECT status FROM sites WHERE name=?', (name,)).fetchone()
+                if row is None or str(row['status']) != '0':
+                    raise ValueError('Cần dừng website liên quan trong aaPanel trước: ' + name)
+
     def mysql_password(self):
         with self.connect() as connection:
             row = connection.execute('SELECT mysql_root FROM config WHERE id=1').fetchone()

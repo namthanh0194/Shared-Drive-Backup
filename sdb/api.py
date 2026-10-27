@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from sdb import PLUGIN, REPOSITORY, VERSION
@@ -12,16 +13,18 @@ from sdb.drive import identifier, make_client, validate_credentials
 from sdb.integration import register, status as integration_status
 from sdb.panel import Panel
 from sdb.release import check_for_updates, rollback, update
-from sdb.storage import file_lock, validate_source
+from sdb.storage import assert_recovery_clear, file_lock, validate_source
 from sdb.worker import ensure_ready, validate_exclusions
 from sdb.restore import catalog, map_backup, prepare_restore, sync_native
 from sdb.native import sites
+from sdb import databases
 
 METHODS = {
     'status', 'save_credentials', 'list_drives', 'browse_folders', 'create_folder', 'set_destination',
     'connection_check', 'save_settings', 'inventory', 'history', 'start_backup', 'start_download',
     'tasks', 'save_github_token', 'check_update', 'update', 'rollback', 'repair_integration', 'read_log',
     'restore_sites', 'restore_catalog', 'map_backup', 'sync_native', 'start_restore',
+    'database_inventory', 'save_database_links', 'database_catalog', 'start_database_backup', 'start_database_restore',
 }
 
 
@@ -53,13 +56,38 @@ class API:
             'disk': {'free': disk.free, 'total': disk.total}, 'history': self.store.history(5),
             'integration': integration_status(self.store, '/www/server/panel'),
             'rollback_available': (self.store.data / 'releases/previous/info.json').exists(),
-            'recovery_required': (self.store.data / 'deployment-recovery.json').exists() or (self.store.data / 'restore-recovery.json').exists(),
+            'recovery_required': any((self.store.data / name).exists() for name in ['deployment-recovery.json', 'restore-recovery.json', 'database-recovery.json']),
         }
 
+    @contextmanager
     def mutation_lock(self):
-        if (self.store.data / 'restore-recovery.json').exists():
-            raise ValueError('Khôi phục chưa hoàn tất; kiểm tra journal trước khi thay đổi cấu hình.')
-        return file_lock(self.store.data / 'operation.lock')
+        with file_lock(self.store.data / 'operation.lock'):
+            assert_recovery_clear(self.store)
+            yield
+
+    def database_inventory(self, arguments):
+        return databases.inventory(self.store, Panel())
+
+    def save_database_links(self, arguments):
+        links = arguments.get('links', {})
+        links = json.loads(links) if isinstance(links, str) else links
+        with self.mutation_lock():
+            return databases.save_links(self.store, Panel(), links)
+
+    def database_catalog(self, arguments):
+        return databases.catalog(self.store, Panel(), str(arguments.get('backup_id', '')), arguments.get('offset', 0))
+
+    def start_database_backup(self, arguments):
+        names = arguments.get('database_names', [])
+        names = json.loads(names) if isinstance(names, str) and names != 'ALL' else names
+        details = databases.prepare_backup(self.store, Panel(), names, arguments.get('keep', 3))
+        return self.launch(details, 'database_backup')
+
+    def start_database_restore(self, arguments):
+        names = arguments.get('database_names', [])
+        names = json.loads(names) if isinstance(names, str) else names
+        details = databases.prepare_restore(self.store, Panel(), str(arguments.get('backup_id', '')), names, arguments.get('confirmation', ''), boolean(arguments.get('writers_stopped', False)), verify_remote=False)
+        return self.launch(details, 'database_restore')
 
     def restore_sites(self, arguments):
         return {'sites': sites(Panel())}
@@ -77,6 +105,8 @@ class API:
         return self.launch(prepare_restore(self.store, Panel(), arguments), 'restore')
 
     def save_credentials(self, arguments):
+        if arguments.get('_secure_transport') is not True:
+            raise ValueError('Cần HTTPS để gửi credentials; dùng SSH import nếu panel chạy HTTP.')
         document = arguments.get('document', '')
         if not isinstance(document, str) or len(document) > 65536:
             raise ValueError('JSON xác thực không hợp lệ hoặc quá lớn.')
@@ -151,9 +181,10 @@ class API:
 
     def launch(self, details, operation):
         with file_lock(self.store.data / 'launch.lock'):
-            if self.store.busy() or any(row['status'] == 'queued' and time.time() - row['created'] < 120 for row in self.store.history(10)):
-                raise ValueError('Đang có tác vụ chạy hoặc chờ chạy.')
-            job_id = self.store.new_job(details)
+            with self.mutation_lock():
+                if any(row['status'] == 'queued' and time.time() - row['created'] < 120 for row in self.store.history(10)):
+                    raise ValueError('Đang có tác vụ chờ chạy.')
+                job_id = self.store.new_job(details)
             try:
                 path = self.store.logs / (job_id + '.log')
                 with open(path, 'xb') as log:
@@ -201,6 +232,8 @@ class API:
         return {'log': text}
 
     def save_github_token(self, arguments):
+        if arguments.get('_secure_transport') is not True:
+            raise ValueError('Cần HTTPS để gửi GitHub token; dùng SSH import nếu panel chạy HTTP.')
         token = str(arguments.get('token', '')).strip()
         if not re.fullmatch(r'[A-Za-z0-9_]{20,255}', token):
             raise ValueError('GitHub token không hợp lệ.')

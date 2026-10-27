@@ -7,7 +7,7 @@ from pathlib import Path, PurePosixPath
 from sdb.drive import BackupMissing, digests, make_client
 from sdb.native import check_identity, register_backup, remove_backup, site
 from sdb.panel import Panel
-from sdb.storage import atomic_json, file_lock, safe_error, sync_directory, validate_source
+from sdb.storage import assert_recovery_clear, atomic_json, file_lock, safe_error, sync_directory, validate_source
 from sdb.worker import archive_directory
 
 
@@ -27,6 +27,7 @@ def backup_for_site(store, panel, backup_id, site_id, mapped=True):
 
 def map_backup(store, panel, backup_id, site_id, confirmation):
     with file_lock(store.data / 'operation.lock'):
+        assert_recovery_clear(store)
         original, current = backup_for_site(store, panel, backup_id, site_id, mapped=False)
         if confirmation != current['name'] or original['details'].get('site'):
             raise ValueError('Nhập đúng tên website để liên kết bản backup cũ chưa có ID.')
@@ -60,6 +61,7 @@ def catalog(store, panel, site_id, offset=0, client=None):
 
 def sync_native(store, panel, site_id, offset=0, client=None):
     with file_lock(store.data / 'operation.lock'):
+        assert_recovery_clear(store)
         result = catalog(store, panel, site_id, offset, client)
         added = removed = 0
         for row in result['backups']:
@@ -243,6 +245,7 @@ def run_restore(store, job_id, panel=None):
         return False
     try:
         with file_lock(store.data / 'operation.lock'):
+            assert_recovery_clear(store)
             job = store.job(job_id)
             if job['status'] != 'queued' or job['details'].get('kind') != 'restore':
                 return False

@@ -172,7 +172,7 @@ class DriveClient:
         metadata['appProperties'] = verified_properties
         return {**metadata, 'sha256': sha256, 'parent_id': parent_id}
 
-    def prune(self, configuration, task, parent_id, keep, exclude_id):
+    def prune(self, configuration, task, parent_id, keep, exclude_id, protected_ids=()):
         if not configuration['prune_enabled']:
             return 0
         if not 1 <= int(keep) <= 10000:
@@ -202,7 +202,7 @@ class DriveClient:
             verified_files.append(item)
         removed = 0
         for item in verified_files[int(keep):]:
-            if item['id'] == exclude_id:
+            if item['id'] == exclude_id or item['id'] in protected_ids:
                 continue
             fresh = self.service.files().get(fileId=item['id'], supportsAllDrives=True, fields='id,parents,appProperties,driveId,md5Checksum,trashed').execute(num_retries=3)
             if fresh.get('trashed') or fresh.get('parents') != item.get('parents') or fresh.get('driveId') != item.get('driveId') or fresh.get('appProperties') != item.get('appProperties') or fresh.get('md5Checksum') != item.get('md5Checksum'):

@@ -85,3 +85,21 @@
 - Published code commit ecd724a and annotated tag v1.0.7 over the dedicated SSH deploy key. Hosted Actions run 40452165698 completed successfully and the public latest Release contains the 183626-byte ZIP and 64-byte signature.
 - Downloaded both assets anonymously through the same GitHub asset API used by the updater, verified the signature with the currently installed production trust key, checked exact equality with the local deterministic archive and copied Drive PNG, and validated archive allowlisting/version. SHA-256: 9ef5f74feae5a76951b75dcc933935dde2ae72f968cbd31e556fe237ba3579f4. Public verification receipts remain under ignored tmp/.
 - Final production comparison: installed version remains 1.0.6; code/config/credential/native Cron comparison hashes match the pre-change baseline. No production cache was cleared or update triggered. The user must choose Kiểm tra ngay and explicitly install 1.0.7; their actual browser is the remaining live acceptance check.
+
+## 2026-10-27 — DEV-only: Cập nhật tài liệu aaPanel v1.1, vá bảo mật và bổ sung backup theo đợt / restore MySQL chọn lọc
+
+- Cập nhật AGENTS.md chuẩn hóa theo tài liệu aaPanel Plug-in Development Documentation v1.1 (cấu trúc backend/frontend, giao tiếp POST, cô lập tham số định tuyến hệ thống `action, s, name, a`, định dạng phản hồi JSON, allowlist, và cảnh báo về dynamic routing).
+- Khắc phục 3 lỗi an toàn đã được duyệt:
+  1. Bắt buộc kết nối HTTPS khi lưu credentials và token qua web (cả frontend và backend dispatch); panel HTTP phải dùng SSH CLI import.
+  2. Installer trực tiếp kiểm tra và chặn sửa đổi code khi còn journal phục hồi (`restore-recovery.json`, `deployment-recovery.json`, `database-recovery.json`).
+  3. API launch và background workers kiểm tra trạng thái journal phục hồi ngay trước khi tạo hoặc khởi chạy job, chặn hoàn toàn việc xếp hàng tác vụ khi hệ thống cần phục hồi.
+- Bổ sung module `sdb/databases.py` và công cụ `tools/recover_database.py`:
+  - Cho phép liên kết website và database MySQL do aaPanel quản lý rõ ràng, hỗ trợ quan hệ nhiều-nhiều và tránh trùng lặp khi backup/restore database dùng chung.
+  - Hỗ trợ backup full toàn bộ database hoặc chọn danh sách: mỗi database được dump riêng thành file `.sql.gz` và tạo manifest tổng thể trên Google Drive. Retention bảo vệ các file thành viên khi đợt backup còn hạn lưu.
+  - Hỗ trợ khôi phục tất cả hoặc chọn theo website / từng database: bắt buộc dừng website liên quan, kiểm tra dung lượng datadir, xác thực cấu trúc `CREATE DATABASE` và `USE` trong file dump, tự động tạo snapshot cục bộ tất cả database đích trước khi DROP/import, và ghi journal khôi phục để phục hồi an toàn nếu xảy ra sự cố giữa chừng.
+  - Tiến trình MySQL import được gắn `PR_SET_PDEATHSIG` để dừng ngay nếu worker gặp sự cố, tránh ghi đè dữ liệu ngoài ý muốn.
+- Thêm tab **Database** trên giao diện với đầy đủ tiếng Việt có dấu, hỗ trợ lọc theo website, xác nhận số lượng database bị ảnh hưởng và xem tóm tắt trước khi thực hiện.
+- Kiểm thử xác minh:
+  - 128 bài test Python trong `tmp/` vượt qua 100% (bao gồm 37 bài test mới cho tính năng database).
+  - Test Playwright chạy kiểm tra giao diện web thành công: luồng backup/restore database, kiểm tra responsive/modal 112 trường hợp, chế độ sáng/tối.
+  - Không tác động dữ liệu production, không chạy backup/restore thật trên VPS, không commit/push hay deploy.

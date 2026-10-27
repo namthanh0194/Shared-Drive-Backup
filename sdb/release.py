@@ -18,7 +18,7 @@ from pathlib import Path, PurePosixPath
 
 from sdb import PLUGIN, REPOSITORY, VERSION
 from sdb.integration import replace_file
-from sdb.storage import atomic_json, file_lock, sync_directory
+from sdb.storage import assert_recovery_clear, atomic_json, file_lock, sync_directory
 
 TOP_FILES = {
     'info.json', 'shared_drive_backup_main.py', 'cli.py', 'index.html', 'ui.js', 'ui.css',
@@ -184,6 +184,10 @@ def validate_code(root, expected_version=None):
         if path.suffix == '.py':
             compile(path.read_text(), relative, 'exec')
     metadata = json.loads((root / 'info.json').read_text())
+    api_syntax = ast.parse((root / 'sdb/api.py').read_text())
+    database_restore = any(isinstance(node, ast.ImportFrom) and node.module == 'sdb' and any(alias.name == 'databases' for alias in node.names) for node in api_syntax.body)
+    if database_restore and not {'sdb/databases.py', 'tools/recover_database.py'}.issubset(code_files(root)):
+        raise ValueError('Gói cài có API database restore nhưng thiếu module hoặc công cụ phục hồi.')
     if metadata.get('name') != PLUGIN:
         raise ValueError('Gói cài không đúng plugin.')
     version_tuple(metadata['versions'])
@@ -203,6 +207,7 @@ def deploy(source, destination, panel_path='/www/server/panel', lock=True):
     validate_code(source)
     store = Store(destination)
     with file_lock(store.data / 'operation.lock') if lock else nullcontext():
+        assert_recovery_clear(store)
         if (store.data / 'restore-recovery.json').exists():
             raise ValueError('Khôi phục website chưa hoàn tất. Không cập nhật/rollback trước khi kiểm tra journal restore.')
         recovery_path = store.data / 'deployment-recovery.json'
@@ -288,6 +293,7 @@ def deploy(source, destination, panel_path='/www/server/panel', lock=True):
 
 def update(store, expected_version):
     with file_lock(store.data / 'operation.lock'):
+        assert_recovery_clear(store)
         release = latest_release(store)
         if release['version'] != expected_version or not release['available']:
             raise ValueError('Release đã thay đổi hoặc không mới hơn. Hãy kiểm tra lại.')

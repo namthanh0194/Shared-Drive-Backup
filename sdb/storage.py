@@ -46,6 +46,11 @@ def file_lock(path, blocking=False):
     finally:
         os.close(descriptor)
 
+def assert_recovery_clear(store):
+    for name in ['restore-recovery.json', 'deployment-recovery.json', 'database-recovery.json']:
+        if (store.data / name).exists():
+            raise ValueError('Có journal ' + name.split('-')[0] + ' chưa hoàn tất: ' + name + '. Kiểm tra phục hồi trước khi chạy tiếp.')
+
 
 def validate_source(value, plugin_root):
     try:
@@ -166,7 +171,7 @@ class Store:
             connection.execute('UPDATE jobs SET status=?,updated=?,details=? WHERE id=?', (status, time.time(), json.dumps(document), job_id))
 
     def busy(self):
-        if (self.data / 'restore-recovery.json').exists():
+        if any((self.data / name).exists() for name in ['restore-recovery.json', 'deployment-recovery.json', 'database-recovery.json']):
             return True
         try:
             with file_lock(self.data / 'operation.lock'):

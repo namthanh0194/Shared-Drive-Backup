@@ -7,11 +7,12 @@ import shutil
 import subprocess
 import tempfile
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 from sdb.drive import make_client
 from sdb.panel import Panel
-from sdb.storage import file_lock, safe_error, validate_source
+from sdb.storage import assert_recovery_clear, file_lock, safe_error, validate_source
 
 
 def task_key(kind, target, folder_id, identity='manual'):
@@ -96,11 +97,15 @@ def archive_directory(source, output, exclusions, max_bytes, reserve_bytes):
 
 
 def mysql_archive(panel, database, output, max_bytes, reserve_bytes):
-    if not re.fullmatch(r'[A-Za-z0-9_$-]{1,64}', database):
+    if not re.fullmatch(r'[A-Za-z0-9_$][A-Za-z0-9_$-]{0,63}', database):
         raise ValueError('Tên database không hợp lệ.')
     binary = Path('/www/server/mysql/bin/mysqldump')
     if not binary.is_file():
         raise ValueError('Không tìm thấy mysqldump của aaPanel.')
+    features = subprocess.run([str(binary), '--no-defaults', '--help'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True, timeout=30).stdout
+    extra = ['--set-gtid-purged=OFF'] if b'set-gtid-purged' in features else []
+    if b'no-tablespaces' in features:
+        extra.append('--no-tablespaces')
     password = panel.mysql_password()
     escaped = password.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\r', '\\r')
     descriptor, options = tempfile.mkstemp(dir=output.parent, prefix='.mysql-', suffix='.cnf')
@@ -111,7 +116,7 @@ def mysql_archive(panel, database, output, max_bytes, reserve_bytes):
             os.fchmod(configuration.fileno(), 0o600)
             configuration.write('[client]\nuser=root\npassword="' + escaped + '"\n')
         with open(error_path, 'wb') as errors, open(output, 'xb') as archive:
-            dump = subprocess.Popen([str(binary), '--defaults-extra-file=' + options, '--single-transaction', '--quick', '--routines', '--events', '--triggers', '--hex-blob', '--databases', database], stdout=subprocess.PIPE, stderr=errors)
+            dump = subprocess.Popen([str(binary), '--defaults-file=' + options, '--host=localhost', '--protocol=socket', '--single-transaction', '--quick', '--routines', '--events', '--triggers', '--hex-blob'] + extra + ['--databases', database], stdout=subprocess.PIPE, stderr=errors)
             processes.append(dump)
             compress = subprocess.Popen(['gzip', '-c'], stdin=dump.stdout, stdout=archive, stderr=errors)
             processes.append(compress)
@@ -130,10 +135,7 @@ def mysql_archive(panel, database, output, max_bytes, reserve_bytes):
 
 
 def ensure_ready(store, client=None):
-    if (store.data / 'restore-recovery.json').exists():
-        raise ValueError('Khôi phục website chưa hoàn tất. Kiểm tra journal restore trước khi chạy tiếp.')
-    if (store.data / 'deployment-recovery.json').exists():
-        raise ValueError('Deployment chưa phục hồi. Chạy tools/recover_deployment.py trước khi backup.')
+    assert_recovery_clear(store)
     configuration = store.config()
     if not configuration.get('configured') or not configuration.get('folder_id') or not store.secret('credentials'):
         raise ValueError('Chưa kết nối Google và xác nhận thư mục lưu. Không tạo backup.')
@@ -145,12 +147,12 @@ def ensure_ready(store, client=None):
     return configuration, client
 
 
-def run_backup(store, job_id, panel=None):
+def run_backup(store, job_id, panel=None, lock=True):
     panel = panel or Panel()
     archive = None
     verified_upload = False
     try:
-        with file_lock(store.data / 'operation.lock'):
+        with file_lock(store.data / 'operation.lock') if lock else nullcontext():
             job = store.job(job_id)
             details = job['details']
             store.update_job(job_id, 'running', phase='preflight', progress=0)
@@ -159,6 +161,13 @@ def run_backup(store, job_id, panel=None):
                 raise ValueError('Nơi lưu đã thay đổi sau khi tạo tác vụ. Vui lòng chạy lại.')
             kind, target = details['kind'], details['target']
             source = panel.source(kind, target)
+            if kind == 'database':
+                from sdb.databases import database_name
+                database_name(target)
+                identity = panel.database_identity(target)
+                if details.get('database') and details['database'] != identity:
+                    raise ValueError('Database đã đổi ID sau khi tạo tác vụ.')
+                store.update_job(job_id, 'running', database=identity)
             if kind == 'site':
                 from sdb.native import site_by_name
                 snapshot = site_by_name(panel, target)
@@ -188,7 +197,9 @@ def run_backup(store, job_id, panel=None):
             store.update_job(job_id, 'running', phase='retention', remote=metadata, progress=100)
             warning = ''
             try:
-                removed = client.prune(configuration, task, metadata['parent_id'], int(details.get('keep', 3)), metadata['id'])
+                from sdb.databases import protected_files
+                protected = protected_files(store)
+                removed = 0 if details.get('batch_id') else client.prune(configuration, task, metadata['parent_id'], int(details.get('keep', 3)), metadata['id'], **({'protected_ids': protected} if protected else {}))
             except Exception as error:
                 warning = 'Backup đã xác minh nhưng dọn bản cũ thất bại: ' + safe_error(error)
                 removed = 0
