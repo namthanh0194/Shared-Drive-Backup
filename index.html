@@ -2,7 +2,7 @@
   <style>/* SHARED_DRIVE_STYLE */</style>
   <header class="sdb-header">
     <div class="sdb-brand"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M4 11h10l3 4h11v13H4z" stroke="currentColor" stroke-width="2"/><path d="M16 20V3m-5 5 5-5 5 5" stroke="currentColor" stroke-width="2"/></svg><div><h1>Shared Drive Backup</h1><p>Google Shared drives · aaPanel</p></div></div>
-    <div class="sdb-header-actions"><span id="sdb-version">v1.0.2</span><button type="button" id="sdb-header-update" class="sdb-primary" hidden>Cập nhật</button><button type="button" id="sdb-theme" class="sdb-quiet" aria-label="Đổi giao diện sáng tối">Sáng / tối</button><button type="button" id="sdb-refresh">Làm mới</button></div>
+    <div class="sdb-header-actions"><span id="sdb-version">v1.0.2</span><button type="button" id="sdb-header-update" class="sdb-primary" disabled>Update</button><button type="button" id="sdb-theme" class="sdb-quiet" aria-label="Đổi giao diện sáng tối">Sáng / tối</button><button type="button" id="sdb-refresh">Làm mới</button></div>
   </header>
   <nav class="sdb-tabs" aria-label="Các mục plugin" role="tablist">
     <button type="button" role="tab" aria-selected="true" aria-controls="sdb-overview" id="sdb-tab-overview" data-tab="overview">Tổng quan</button>
@@ -52,7 +52,7 @@
         <p id="sdb-update-status" role="status" aria-live="polite">Đang kiểm tra phiên bản…</p>
         <p id="sdb-update-checked">Chưa kiểm tra.</p>
         <p>Tự kiểm tra khi mở plugin và mỗi 6 giờ trong lúc plugin đang mở. Khi có lỗi, thử lại sau 15 phút. Không tự cài đặt.</p>
-        <div class="sdb-actions"><button type="button" id="sdb-check-update">Kiểm tra ngay</button><button type="button" id="sdb-update" class="sdb-primary" disabled>Update</button><button type="button" id="sdb-rollback" disabled>Rollback</button></div>
+        <div class="sdb-actions"><button type="button" id="sdb-check-update">Kiểm tra ngay</button><button type="button" id="sdb-rollback" disabled>Rollback</button></div>
         <pre id="sdb-release-notes" class="sdb-release-notes" hidden></pre>
         <div class="sdb-note">Chỉ cài gói release có chữ ký hợp lệ. Giữ nguyên credentials, nơi lưu và lịch Cron. Có thể rollback về mã phiên bản trước.</div>
       </div></div>

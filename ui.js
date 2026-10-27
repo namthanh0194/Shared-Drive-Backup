@@ -26,7 +26,7 @@
     if (!response.ok || result.status !== true) throw new Error(result.msg || 'Không gọi được plugin.');
     return result.data;
   }
-  async function action(control, operation, success) { const disabled = control.disabled; control.disabled = true; control.setAttribute('aria-busy', 'true'); try { const result = await operation(); if (success) message(success, false); return result; } catch (error) { message(error.message, true); throw error; } finally { control.disabled = control.id === 'sdb-update' ? !state.release || !state.release.available : disabled; control.removeAttribute('aria-busy'); } }
+  async function action(control, operation, success) { const disabled = control.disabled; control.disabled = true; control.setAttribute('aria-busy', 'true'); try { const result = await operation(); if (success) message(success, false); return result; } catch (error) { message(error.message, true); throw error; } finally { control.disabled = (control.id === 'sdb-update' || control.id === 'sdb-header-update') ? !state.release || !state.release.available : disabled; control.removeAttribute('aria-busy'); } }
   function bind(id, callback) { find(id).addEventListener('click', event => { Promise.resolve(callback(event)).catch(() => {}); }); }
   function showTab(name) {
     root.querySelectorAll('[role=tab]').forEach(tab => { const selected = tab.dataset.tab === name; tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1; });
@@ -105,13 +105,11 @@
   function renderUpdate(result) {
     state.release = result;
     state.nextUpdateCheck = result.next_check_at;
-    find('update').disabled = !result.available || Boolean(result.error);
-    text('update', result.available ? 'Cập nhật lên v' + result.version : 'Update');
     const headerUpdate = find('header-update');
     if (headerUpdate) {
-      headerUpdate.hidden = !result.available || Boolean(result.error);
-      headerUpdate.disabled = !result.available || Boolean(result.error);
-      headerUpdate.textContent = result.available ? 'Cập nhật lên v' + result.version : 'Cập nhật';
+      headerUpdate.hidden = false;
+      headerUpdate.disabled = !result.available;
+      headerUpdate.textContent = result.available ? 'Cập nhật lên v' + result.version : 'Update';
     }
     text('update-status', result.error || (result.available ? 'Có phiên bản mới: v' + result.version : 'Bạn đang dùng bản mới nhất: v' + result.installed_version));
     text('update-checked', result.checked_at ? 'Lần kiểm tra: ' + date(result.checked_at) : 'Chưa kiểm tra được phiên bản.');
@@ -123,7 +121,8 @@
   async function checkUpdates(force = false) {
     if (state.updateChecking || (!force && Date.now() / 1000 < state.nextUpdateCheck)) return;
     state.updateChecking = true;
-    find('update').disabled = true;
+    const headerUpdate = find('header-update');
+    if (headerUpdate) headerUpdate.disabled = true;
     text('update-status', 'Đang kiểm tra phiên bản…');
     try {
       renderUpdate(await api('check_update', { force: force ? '1' : '0' }));
@@ -139,18 +138,16 @@
     await action(control, async () => {
       await api('update', { version: state.release.version });
       state.release = null;
-      find('update').disabled = true;
       const headerUpdate = find('header-update');
       if (headerUpdate) {
         headerUpdate.disabled = true;
-        headerUpdate.hidden = true;
+        headerUpdate.textContent = 'Đã cập nhật';
       }
       find('update-banner').hidden = true;
       text('update-status', 'Đã cập nhật. Đóng và mở lại plugin để nạp giao diện mới.');
       await refresh();
     }, 'Đã cập nhật. Đóng và mở lại plugin.');
   }
-  bind('update', event => triggerUpdate(event.currentTarget));
   bind('header-update', event => triggerUpdate(event.currentTarget));
   bind('rollback', async event => { if (!confirm('Khôi phục mã phiên bản trước, giữ dữ liệu và cấu hình?')) return; await action(event.currentTarget, async () => { await api('rollback'); await refresh(); }, 'Đã rollback. Đóng và mở lại plugin.'); });
   bind('repair-integration', event => action(event.currentTarget, async () => { const result = await api('repair_integration'); await refresh(); if (result.restart_panel_required) message('Adapter đã sửa. Cần nạp lại dịch vụ panel để backend nhận thay đổi; không cần restart OLS.', false); }));
@@ -195,28 +192,32 @@
     if (!modal.length) return;
     const targetWidth = Math.min(1060, Math.max(360, window.innerWidth - 32));
     const targetLeft = Math.max(16, Math.round((window.innerWidth - targetWidth) / 2));
-    const maxHeight = Math.max(300, window.innerHeight - 60);
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 800;
+    const targetTop = 20;
+    const maxHeight = Math.max(300, viewportHeight - (targetTop * 2));
     modal.css({
       width: targetWidth + 'px',
-      maxHeight: maxHeight + 'px',
+      height: maxHeight + 'px',
       left: targetLeft + 'px',
-      top: '30px',
+      top: targetTop + 'px',
       transform: 'none',
       margin: '0',
       overflow: 'hidden'
     });
     const content = modal.find('.layui-layer-content');
     if (content.length) {
+      const titleHeight = modal.find('.layui-layer-title').outerHeight() || 42;
       content.css({
-        maxHeight: (maxHeight - 42) + 'px',
+        height: (maxHeight - titleHeight) + 'px',
+        maxHeight: (maxHeight - titleHeight) + 'px',
         overflowY: 'auto',
         overflowX: 'hidden',
-        height: 'auto'
+        boxSizing: 'border-box'
       });
     }
     const index = modal.attr('times');
     if (window.layer && index && typeof window.layer.style === 'function') {
-      try { window.layer.style(index, { width: targetWidth + 'px', maxHeight: maxHeight + 'px', left: targetLeft + 'px', top: '30px' }); } catch (e) {}
+      try { window.layer.style(index, { width: targetWidth + 'px', height: maxHeight + 'px', left: targetLeft + 'px', top: targetTop + 'px' }); } catch (e) {}
     }
   }
   adjustModalPosition();
