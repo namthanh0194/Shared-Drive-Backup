@@ -22,6 +22,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
       - name: Install signature verifier
         run: python3 -m pip install 'cryptography>=41'

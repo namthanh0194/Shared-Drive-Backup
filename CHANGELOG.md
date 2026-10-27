@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.3 — 2026-10-27
+
+- UI: Nút Cập nhật trên header mặc định ẩn hoàn toàn khi đang ở bản mới nhất, chỉ xuất hiện khi phát hiện có phiên bản mới trên GitHub.
+- Workflow: Bật fetch-tags để xác thực chữ ký tag trên GitHub Actions runner.
+
 ## 1.0.2 — 2026-10-27
 
 - UI: Thêm nút Cập nhật ở góc trên bên phải header, tự động xuất hiện nổi bật khi có phiên bản mới trên GitHub.

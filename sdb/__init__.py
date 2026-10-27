@@ -1,3 +1,3 @@
-VERSION = '1.0.2'
+VERSION = '1.0.3'
 PLUGIN = 'shared_drive_backup'
 REPOSITORY = 'namthanh0194/Shared-Drive-Backup'

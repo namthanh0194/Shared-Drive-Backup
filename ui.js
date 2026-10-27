@@ -107,8 +107,8 @@
     state.nextUpdateCheck = result.next_check_at;
     const headerUpdate = find('header-update');
     if (headerUpdate) {
-      headerUpdate.hidden = false;
-      headerUpdate.disabled = !result.available;
+      headerUpdate.hidden = !result.available || Boolean(result.error);
+      headerUpdate.disabled = !result.available || Boolean(result.error);
       headerUpdate.textContent = result.available ? 'Cập nhật lên v' + result.version : 'Update';
     }
     text('update-status', result.error || (result.available ? 'Có phiên bản mới: v' + result.version : 'Bạn đang dùng bản mới nhất: v' + result.installed_version));
