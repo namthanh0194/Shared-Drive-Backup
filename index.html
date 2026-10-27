@@ -2,7 +2,7 @@
   <style>/* SHARED_DRIVE_STYLE */</style>
   <header class="sdb-header">
     <div class="sdb-brand"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M4 11h10l3 4h11v13H4z" stroke="currentColor" stroke-width="2"/><path d="M16 20V3m-5 5 5-5 5 5" stroke="currentColor" stroke-width="2"/></svg><div><h1>Shared Drive Backup</h1><p>Google Shared drives · aaPanel</p></div></div>
-    <div class="sdb-header-actions"><span id="sdb-version">v1.0.5</span><button type="button" id="sdb-header-update" class="sdb-primary" hidden>Cập nhật</button><button type="button" id="sdb-theme" class="sdb-quiet" aria-label="Đổi giao diện sáng tối">Sáng / tối</button><button type="button" id="sdb-refresh">Làm mới</button></div>
+    <div class="sdb-header-actions"><span id="sdb-version">v1.0.6</span><button type="button" id="sdb-header-update" class="sdb-primary" hidden>Cập nhật</button><button type="button" id="sdb-theme" class="sdb-quiet" aria-label="Đổi giao diện sáng tối">Sáng / tối</button><button type="button" id="sdb-refresh">Làm mới</button></div>
   </header>
   <nav class="sdb-tabs" aria-label="Các mục plugin" role="tablist">
     <button type="button" role="tab" aria-selected="true" aria-controls="sdb-overview" id="sdb-tab-overview" data-tab="overview">Tổng quan</button>
@@ -46,7 +46,7 @@
   <section id="sdb-settings" role="tabpanel" aria-labelledby="sdb-tab-settings" hidden>
     <div class="sdb-title-row"><h2>Cài đặt & phiên bản</h2></div><div class="sdb-two-column"><form id="sdb-settings-form" class="sdb-panel"><h3>An toàn & lưu trữ</h3><label for="sdb-server-name">Tên VPS</label><input id="sdb-server-name" maxlength="80" required><label for="sdb-min-free">Đĩa dự phòng tối thiểu · MiB</label><input type="number" id="sdb-min-free" min="256" max="1048576" required><label for="sdb-max-archive">Archive tối đa · GiB</label><input type="number" id="sdb-max-archive" min="1" max="2048" required><label class="sdb-check"><input type="checkbox" id="sdb-keep-local">Giữ archive local sau khi upload thành công</label><label class="sdb-check"><input type="checkbox" id="sdb-prune">Cho phép đưa bản backup cũ vào thùng rác Drive</label><p>Chỉ dọn file do plugin tạo, đúng VPS, thư mục và nguồn. Mặc định không xóa. Archive của lần upload thất bại được giữ lại để kiểm tra.</p><button type="submit">Lưu cài đặt</button></form>
       <div class="sdb-panel"><h3>Phiên bản & cập nhật</h3>
-        <p>Đang cài <strong id="sdb-current-version">1.0.5</strong></p>
+        <p>Đang cài <strong id="sdb-current-version">1.0.6</strong></p>
         <p>Repo chính thức: <code id="sdb-repository">namthanh0194/Shared-Drive-Backup</code></p>
         <p>Repo public · Không cần token hoặc SSH key trên các VPS cài plugin.</p>
         <p id="sdb-update-status" role="status" aria-live="polite">Đang kiểm tra phiên bản…</p>

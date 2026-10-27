@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.6 — 2026-10-27
+
+- UI: Dùng setProperty !important ép cứng chiều cao và overflow cho .layui-layer và .layui-layer-content, ngăn aaPanel ghi đè style khiến popup bị tràn chân màn hình.
+
 ## 1.0.5 — 2026-10-27
 
 - UI: Đồng bộ màu thanh tiêu đề layer theo chế độ Dark Mode của aaPanel (thay nền trắng bằng màu tối).
