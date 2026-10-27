@@ -107,6 +107,13 @@ Kiểm thử DEV dùng MySQL/Drive giả lập, không chứng minh import thàn
 
 ## Website restore and native Backup / Restore (DEV, unreleased)
 
+### MySQL backup count in aaPanel (DEV)
+
+- Verified local MySQL backups now register `type=1` and `pid=database_id` in aaPanel's existing backup table, using `local_path|shared_drive_backup|remote_file_id`. This updates **Databases → MySQL → Backup**, not the Website source-code backup count. Single-database Cron, manual backups and individual batch members use the same registration; manifests are not counted.
+- After upgrading, open the plugin's **Database** tab and choose **Đồng bộ đếm backup aaPanel** to backfill existing history, then refresh the native Databases page. Sync verifies Drive ownership/checksums, scans pages of 20, is idempotent and only registers history with a saved database identity matching the current local MySQL database and destination. Legacy backups without an ID, recreated databases and errors are skipped and reported; names alone do not prove identity.
+- Native counts reflect the last registration/sync. Sync removes only this plugin/VPS/job's database rows for confirmed trashed files; network, permission, HTTP 404 or checksum errors preserve rows. Removing a native row never deletes the Drive file. Use the plugin to download/restore remote backups; no native local import capability is added.
+- This integration writes backup metadata through the existing schema only: no aaPanel core source, schema, MySQL application data, credentials or Cron configuration changes.
+
 This feature is in DEV only; installed v1.0.8 stays unchanged until a separately approved release/update. It restores **PHP website files/code**, not databases, OLS settings, SSL certificates or DNS.
 
 ### aaPanel integration

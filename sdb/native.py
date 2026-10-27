@@ -52,40 +52,59 @@ def marker(store, job_id):
 
 def register_backup(store, panel, job):
     details = job['details']
-    if job['status'] != 'success' or details.get('kind') != 'site' or not details.get('verified') or not details.get('site'):
-        raise ValueError('Chỉ đăng ký bản backup website đã xác minh và liên kết.')
+    kind = details.get('kind')
+    saved = details.get('site' if kind == 'site' else 'database')
+    if job['status'] != 'success' or kind not in {'site', 'database'} or not details.get('verified') or not saved:
+        raise ValueError('Chỉ đăng ký bản backup website/database đã xác minh và liên kết.')
     remote = details['remote']
-    if not re.fullmatch(r'[A-Za-z0-9_.-]+\.tar\.gz', remote.get('name', '')) or not re.fullmatch(r'[A-Za-z0-9_-]{3,200}', remote.get('id', '')) or int(remote.get('size', 0)) <= 0:
+    extension = r'\.tar\.gz' if kind == 'site' else r'\.sql\.gz'
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+' + extension, remote.get('name', '')) or not re.fullmatch(r'[A-Za-z0-9_-]{3,200}', remote.get('id', '')) or int(remote.get('size', 0)) <= 0:
         raise ValueError('Metadata backup không hợp lệ.')
-    saved = details['site']
-    current = site(panel, saved['id'])
-    check_identity(current, saved)
+    if kind == 'site':
+        current = site(panel, saved['id'])
+        check_identity(current, saved)
+    else:
+        from sdb.databases import database_name
+        current = panel.database_identity(database_name(details['target']))
+        if current != saved:
+            raise ValueError('Database đã đổi ID/tên; không đăng ký vào database khác.')
+        configuration = store.config()
+        if not configuration.get('configured') or details.get('destination') != configuration['folder_id']:
+            raise ValueError('Chọn lại đúng nơi lưu gốc trước khi đồng bộ database.')
+    backup_type = 0 if kind == 'site' else 1
     ownership = marker(store, job['id'])
     filename = str(store.tmp / remote['name']) + '|' + PLUGIN + '|' + remote['id']
     connection = backup_connection(panel)
     try:
         with connection:
             connection.execute('BEGIN IMMEDIATE')
-            row = connection.execute('SELECT id,name,path FROM sites WHERE id=?', (current['id'],)).fetchone()
-            check_identity(dict(row) if row else {}, saved)
-            existing = connection.execute('SELECT id,filename FROM backup WHERE type=0 AND pid=? AND ps=?', (current['id'], ownership)).fetchall()
+            if kind == 'site':
+                row = connection.execute('SELECT id,name,path FROM sites WHERE id=?', (current['id'],)).fetchone()
+                check_identity(dict(row) if row else {}, saved)
+            else:
+                row = connection.execute("SELECT id,name FROM databases WHERE id=? AND LOWER(type)='mysql' AND (sid IS NULL OR sid=0)", (current['id'],)).fetchone()
+                if row is None or dict(row) != saved:
+                    raise ValueError('Database đã đổi ID/tên; không đăng ký vào database khác.')
+            existing = connection.execute('SELECT id,filename FROM backup WHERE type=? AND pid=? AND ps=?', (backup_type, current['id'], ownership)).fetchall()
             if len(existing) > 1 or any(entry['filename'].split('|')[1:2] != [PLUGIN] for entry in existing):
                 raise ValueError('Bản ghi native bị thay đổi; không ghi đè.')
             values = (remote['name'], filename, int(remote['size']), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(job['created'])))
             if existing:
                 connection.execute('UPDATE backup SET name=?,filename=?,size=?,addtime=? WHERE id=?', (*values, existing[0]['id']))
                 return existing[0]['id']
-            return connection.execute('INSERT INTO backup (type,pid,name,filename,size,addtime,ps,backup_type) VALUES (0,?,?,?,?,?,?,0)', (current['id'], *values, ownership)).lastrowid
+            return connection.execute('INSERT INTO backup (type,pid,name,filename,size,addtime,ps,backup_type) VALUES (?,?,?,?,?,?,?,0)', (backup_type, current['id'], *values, ownership)).lastrowid
     finally:
         connection.close()
 
 
-def remove_backup(store, panel, job_id):
+def remove_backup(store, panel, job_id, kind='site'):
+    if kind not in {'site', 'database'}:
+        raise ValueError('Loại backup native không hợp lệ.')
     connection = backup_connection(panel)
     try:
         with connection:
             connection.execute('BEGIN IMMEDIATE')
-            rows = connection.execute('SELECT id,filename FROM backup WHERE type=0 AND ps=?', (marker(store, job_id),)).fetchall()
+            rows = connection.execute('SELECT id,filename FROM backup WHERE type=? AND ps=?', (0 if kind == 'site' else 1, marker(store, job_id))).fetchall()
             for row in rows:
                 if row['filename'].split('|')[1:2] == [PLUGIN]:
                     connection.execute('DELETE FROM backup WHERE id=?', (row['id'],))

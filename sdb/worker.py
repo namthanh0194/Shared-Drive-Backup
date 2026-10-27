@@ -206,7 +206,7 @@ def run_backup(store, job_id, panel=None, lock=True):
             if not configuration['keep_local'] and not details.get('keep_local'):
                 archive.unlink()
             store.update_job(job_id, 'success', phase='complete', remote=metadata, pruned=removed, warning=warning, local_retained=archive.exists(), verified=True)
-            if kind == 'site' and str(snapshot['project_type']).upper() == 'PHP':
+            if kind == 'database' or (kind == 'site' and str(snapshot['project_type']).upper() == 'PHP'):
                 try:
                     from sdb.native import register_backup
                     native_id = register_backup(store, panel, store.job(job_id))

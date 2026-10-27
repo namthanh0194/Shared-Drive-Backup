@@ -113,3 +113,16 @@
 - Push commit và tag v1.0.10 lên GitHub qua SSH deploy key.
 - GitHub Actions workflow run 40492129272 đã xác minh gói và chữ ký thành công.
 - GitHub Release v1.0.10 đã được tạo thành công với 2 assets: shared_drive_backup-1.0.10.zip và shared_drive_backup-1.0.10.zip.sig.
+
+## 2026-10-27 — Đồng bộ số đếm backup Database aaPanel (DEV, chưa phát hành)
+
+- Phạm vi người dùng duyệt: hiển thị backup MySQL của plugin trong cột Backup ở Databases. Không thay chức năng cleanup restore hoặc AGENTS.md trong lượt này.
+- Đối chiếu chỉ đọc core aaPanel đang cài: `class_v2/database_v2.py:get_database_size` đếm bảng `backup` với `type=1,pid=database_id`; `class_v2/data_v2.py` nhận diện remote bằng filename ba phần. Không chỉnh file core/schema.
+- Mở rộng đăng ký native để backup MySQL đơn lẻ và thành viên đợt đã xác minh ghi đúng ID database; manifest không đăng ký. Kiểm tra lại identity trong transaction, giữ ownership theo plugin/VPS/job và đăng ký idempotent. Lỗi native chỉ ghi warning, không phủ nhận upload đã xác minh.
+- Thêm endpoint allowlist `sync_database_native` chỉ nhận `offset` và nút trong tab Database của plugin. Đồng bộ lịch sử theo trang 20; xác minh Drive/checksum/nơi lưu và identity đã ghi, bỏ qua lịch sử thiếu ID hoặc database đổi ID, chặn khi busy/journal. Chỉ gỡ dòng database do plugin sở hữu nếu xác nhận file ở thùng rác; lỗi mạng/quyền/404/checksum giữ nguyên dòng. Không xoá file Drive, không chạy dump/import.
+- Số đếm native phản ánh lần đăng ký/đồng bộ gần nhất; sau retention trên Drive cần đồng bộ lại để gỡ các dòng cũ. Download/restore remote vẫn dùng plugin, không thêm native local import.
+- Bằng chứng TDD trong ignored `tmp/`: regression ban đầu chưa có đăng ký database/endpoint sync và UI chưa có nút; sau sửa 15 regression native vượt qua. Toàn bộ Python: 143 tests OK; Playwright database UI (mock) kiểm tra huỷ/xác nhận, phân trang, tổng số và escape cảnh báo; browser suite hiện có và 112 trường hợp popup/viewport/theme vượt qua. `node --check ui.js` và `git diff --check` đạt.
+- Chỉ chạy SQLite/Drive/backup fixture trong `tmp/`; không thay production, không truy cập Google thật, không chạy backup/restore hay đổi Cron thật. Chưa tăng version, commit/push, deploy hoặc phát hành; production chưa nhận thay đổi này.
+
+- Phiên bản phát hành: 1.0.11.
+- Đồng bộ version 1.0.11 trên cả 4 vị trí: sdb/__init__.py, info.json, index.html và CHANGELOG.md.

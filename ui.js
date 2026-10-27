@@ -221,6 +221,20 @@
     text('db-status', (result.complete ? 'Bản backup hoàn tất. ' : 'Đợt chưa hoàn tất: chỉ chọn riêng các database đã thành công. ') + 'Worker sẽ kiểm tra Drive/checksum trước khi snapshot và import.');
   }
   bind('db-refresh', event => action(event.currentTarget, () => loadDatabaseCatalog()));
+  bind('db-sync', event => action(event.currentTarget, async () => {
+    await confirmAction({ title: 'Đồng bộ đếm backup Database aaPanel', message: 'Kiểm tra Drive và đồng bộ lịch sử MySQL có ID database, theo từng trang 20 bản. Không backup/restore, không tải hoặc xoá file Drive, không sửa mã core aaPanel. Chỉ bỏ dòng do plugin quản lý khi file đã ở thùng rác; lỗi mạng/quyền/checksum hoặc bản cũ thiếu ID được bỏ qua.', confirmLabel: 'Đồng bộ' }, async () => {
+      let offset = 0; let registered = 0; let removed = 0; let skipped = 0;
+      const warnings = [];
+      do {
+        text('db-status', 'Đang đồng bộ lịch sử database từ bản ' + (offset + 1) + '… Đã ghi ' + registered + ' bản.');
+        const result = await api('sync_database_native', { offset });
+        registered += result.registered; removed += result.missing_removed; skipped += result.skipped;
+        warnings.push(...result.warnings.slice(0, Math.max(0, 3 - warnings.length)).map(item => item.backup_id.slice(0, 8) + ': ' + item.error));
+        offset = result.next_offset;
+      } while (offset != null);
+      text('db-status', 'Đã đồng bộ ' + registered + ' bản; gỡ ' + removed + ' bản đã vào thùng rác; bỏ qua ' + skipped + ' bản chưa xác minh. Làm mới trang Databases của aaPanel để xem số đếm.' + (warnings.length ? ' Chi tiết: ' + warnings.join('; ') : ''));
+    });
+  }));
   bind('db-prev', event => action(event.currentTarget, () => loadDatabaseCatalog(Math.max(0, databaseState.offset - 20))));
   bind('db-next', event => action(event.currentTarget, () => loadDatabaseCatalog(databaseState.next)));
   find('db-link-site').addEventListener('change', renderDatabaseLinks);

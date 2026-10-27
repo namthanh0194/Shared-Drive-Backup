@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.11 — 2026-10-27
+
+- Đồng bộ backup MySQL đã xác minh vào cột Backup trang Databases aaPanel, đúng ID database, cho backup đơn lẻ và từng thành viên của đợt.
+- Thêm nút đồng bộ lịch sử database theo trang, kiểm tra identity/ownership/checksum; không đếm manifest, không nhân đôi bản ghi hoặc sửa mã core/schema aaPanel.
+
 ## 1.0.10 — 2026-10-27
 
 - Thêm tab Database: liên kết website/database rõ ràng; backup MySQL theo đợt với dump riêng và manifest đã xác minh, giữ file còn được đợt tham chiếu.

@@ -13,12 +13,13 @@ class shared_drive_backup_main:
             'connection_check', 'save_settings', 'inventory', 'history', 'start_backup', 'start_download',
             'tasks', 'save_github_token', 'check_update', 'update', 'rollback', 'repair_integration', 'read_log',
             'restore_sites', 'restore_catalog', 'map_backup', 'sync_native', 'start_restore',
-            'database_inventory', 'save_database_links', 'database_catalog', 'start_database_backup', 'start_database_restore',
+            'database_inventory', 'save_database_links', 'database_catalog', 'start_database_backup', 'start_database_restore', 'sync_database_native',
         }
         if method not in allowed:
             return {'status': False, 'msg': 'Thao tác không được phép.'}
         fields = {
             'save_database_links': {'links'}, 'database_catalog': {'backup_id', 'offset'},
+            'sync_database_native': {'offset'},
             'start_database_backup': {'database_names', 'keep'},
             'start_database_restore': {'backup_id', 'database_names', 'confirmation', 'writers_stopped'},
             'save_credentials': {'document'}, 'list_drives': {'page_token'},
@@ -62,7 +63,7 @@ for method_name in [
     'connection_check', 'save_settings', 'inventory', 'history', 'start_backup', 'start_download',
     'tasks', 'save_github_token', 'check_update', 'update', 'rollback', 'repair_integration', 'read_log',
     'restore_sites', 'restore_catalog', 'map_backup', 'sync_native', 'start_restore',
-    'database_inventory', 'save_database_links', 'database_catalog', 'start_database_backup', 'start_database_restore',
+    'database_inventory', 'save_database_links', 'database_catalog', 'start_database_backup', 'start_database_restore', 'sync_database_native',
 ]:
     setattr(shared_drive_backup_main, method_name, endpoint(method_name))
 

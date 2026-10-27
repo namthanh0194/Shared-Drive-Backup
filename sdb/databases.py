@@ -116,6 +116,40 @@ def backup_record(store, panel, backup_id, client=None):
     return job
 
 
+def sync_native(store, panel, offset=0, client=None):
+    from sdb.native import register_backup, remove_backup
+    offset = int(offset)
+    if offset < 0 or offset > 1000000:
+        raise ValueError('Trang lịch sử không hợp lệ.')
+    with file_lock(store.data / 'operation.lock'):
+        assert_recovery_clear(store)
+        configuration = store.config()
+        if not configuration.get('configured'):
+            raise ValueError('Chưa xác nhận nơi lưu trên Shared Drive.')
+        with store.connect() as connection:
+            rows = connection.execute("SELECT id FROM jobs WHERE status='success' AND json_extract(details,'$.kind')='database' ORDER BY created DESC,id DESC LIMIT 21 OFFSET ?", (offset,)).fetchall()
+        registered = removed = skipped = 0
+        warnings = []
+        for row in rows[:20]:
+            try:
+                job = backup_record(store, panel, row['id'])
+                if not job['details'].get('database'):
+                    raise ValueError('Bản backup cũ chưa ghi ID database; không tự liên kết theo tên.')
+                client = client or make_client(store)
+                try:
+                    client.backup_metadata(configuration, job['details']['remote'], job['details']['task'])
+                except BackupMissing:
+                    remove_backup(store, panel, job['id'], kind='database')
+                    removed += 1
+                    continue
+                native_id = register_backup(store, panel, job)
+                store.update_job(job['id'], 'success', native_id=native_id)
+                registered += 1
+            except Exception as error:
+                skipped += 1
+                warnings.append({'backup_id': row['id'], 'error': safe_error(error)})
+        return {'registered': registered, 'missing_removed': removed, 'skipped': skipped, 'warnings': warnings, 'next_offset': offset + 20 if len(rows) > 20 else None}
+
 def members(store, backup_id):
     original = store.job(backup_id)
     details = original['details']

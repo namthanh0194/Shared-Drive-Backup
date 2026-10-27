@@ -24,7 +24,7 @@ METHODS = {
     'connection_check', 'save_settings', 'inventory', 'history', 'start_backup', 'start_download',
     'tasks', 'save_github_token', 'check_update', 'update', 'rollback', 'repair_integration', 'read_log',
     'restore_sites', 'restore_catalog', 'map_backup', 'sync_native', 'start_restore',
-    'database_inventory', 'save_database_links', 'database_catalog', 'start_database_backup', 'start_database_restore',
+    'database_inventory', 'save_database_links', 'database_catalog', 'start_database_backup', 'start_database_restore', 'sync_database_native',
 }
 
 
@@ -76,6 +76,9 @@ class API:
 
     def database_catalog(self, arguments):
         return databases.catalog(self.store, Panel(), str(arguments.get('backup_id', '')), arguments.get('offset', 0))
+
+    def sync_database_native(self, arguments):
+        return databases.sync_native(self.store, Panel(), arguments.get('offset', 0))
 
     def start_database_backup(self, arguments):
         names = arguments.get('database_names', [])
