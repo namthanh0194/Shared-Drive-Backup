@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.5 — 2026-10-27
+
+- UI: Đồng bộ màu thanh tiêu đề layer theo chế độ Dark Mode của aaPanel (thay nền trắng bằng màu tối).
+- UI: Căn chỉnh lại nút đóng (close 'x') của layer popup hiển thị rõ ràng, không bị che mất.
+- UI: Tính toán chiều cao linh hoạt theo màn hình để form không bị cắt ở dưới và cuộn mượt mà.
+
 ## 1.0.4 — 2026-10-27
 
 - Workflow: Thêm bước fetch tags tường minh để build release trên runner.

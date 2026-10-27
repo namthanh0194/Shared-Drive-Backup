@@ -176,6 +176,29 @@
         }
       }
       root.classList.toggle('sdb-light', !isDark);
+      if (window.$) {
+        const modal = window.$(root).closest('.layui-layer');
+        if (modal.length) {
+          const title = modal.find('.layui-layer-title');
+          if (isDark) {
+            modal.css('background-color', '#202020');
+            title.css({
+              'background-color': '#252525',
+              'color': '#e8e8e8',
+              'border-bottom': '1px solid #383838'
+            });
+            modal.find('.layui-layer-close').css('filter', 'invert(1) grayscale(1)');
+          } else {
+            modal.css('background-color', '#fff');
+            title.css({
+              'background-color': '#f8f8f8',
+              'color': '#333',
+              'border-bottom': '1px solid #eee'
+            });
+            modal.find('.layui-layer-close').css('filter', 'none');
+          }
+        }
+      }
     } catch (e) {}
   }
   syncTheme();
@@ -190,11 +213,14 @@
     if (!window.$) return;
     const modal = window.$(root).closest('.layui-layer');
     if (!modal.length) return;
-    const targetWidth = Math.min(1060, Math.max(360, window.innerWidth - 32));
+    const targetWidth = Math.min(1100, Math.max(360, window.innerWidth - 40));
     const targetLeft = Math.max(16, Math.round((window.innerWidth - targetWidth) / 2));
-    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 800;
-    const targetTop = 20;
-    const maxHeight = Math.max(300, viewportHeight - (targetTop * 2));
+    const viewportHeight = Math.max(400, window.innerHeight || document.documentElement.clientHeight || 800);
+    const targetTop = Math.max(10, Math.round((viewportHeight - Math.min(780, viewportHeight - 30)) / 2));
+    const maxHeight = Math.min(820, viewportHeight - (targetTop * 2));
+    const title = modal.find('.layui-layer-title');
+    const titleHeight = title.outerHeight() || 42;
+    const contentHeight = maxHeight - titleHeight;
     modal.css({
       width: targetWidth + 'px',
       height: maxHeight + 'px',
@@ -202,14 +228,26 @@
       top: targetTop + 'px',
       transform: 'none',
       margin: '0',
-      overflow: 'hidden'
+      overflow: 'visible',
+      borderRadius: '6px',
+      boxShadow: '0 10px 40px rgba(0,0,0,0.5)'
+    });
+    title.css({
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+      userSelect: 'none'
+    });
+    modal.find('.layui-layer-setwin').css({
+      top: '13px',
+      right: '16px',
+      zIndex: '99'
     });
     const content = modal.find('.layui-layer-content');
     if (content.length) {
-      const titleHeight = modal.find('.layui-layer-title').outerHeight() || 42;
       content.css({
-        height: (maxHeight - titleHeight) + 'px',
-        maxHeight: (maxHeight - titleHeight) + 'px',
+        height: contentHeight + 'px',
+        maxHeight: contentHeight + 'px',
         overflowY: 'auto',
         overflowX: 'hidden',
         boxSizing: 'border-box'
@@ -217,8 +255,16 @@
     }
     const index = modal.attr('times');
     if (window.layer && index && typeof window.layer.style === 'function') {
-      try { window.layer.style(index, { width: targetWidth + 'px', height: maxHeight + 'px', left: targetLeft + 'px', top: targetTop + 'px' }); } catch (e) {}
+      try {
+        window.layer.style(index, {
+          width: targetWidth + 'px',
+          height: maxHeight + 'px',
+          left: targetLeft + 'px',
+          top: targetTop + 'px'
+        });
+      } catch (e) {}
     }
+    syncTheme();
   }
   adjustModalPosition();
   window.addEventListener('resize', adjustModalPosition);
