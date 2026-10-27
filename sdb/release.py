@@ -143,7 +143,7 @@ def latest_release(store):
     name = f'{PLUGIN}-{version}.zip'
     if name not in assets or name + '.sig' not in assets:
         raise ValueError('Release thiếu gói cài hoặc chữ ký.')
-    return {'version': version, 'available': version_tuple(version) > version_tuple(VERSION), 'body': str(document.get('body', ''))[:5000], 'url': document.get('html_url', ''), 'assets': assets, 'asset_name': name}
+    return {'version': version, 'available': version_tuple(version) > version_tuple(VERSION), 'body': str(document.get('body', ''))[:5000], 'published_at': str(document.get('published_at') or '')[:64], 'url': document.get('html_url', ''), 'assets': assets, 'asset_name': name}
 
 def check_for_updates(store, force=False):
     path = store.data / 'update-cache.json'
@@ -157,10 +157,11 @@ def check_for_updates(store, force=False):
         except (OSError, ValueError, KeyError, TypeError):
             cached, valid = None, False
         if force or not valid:
-            cached = {'repository': REPOSITORY, 'checked_at': now, 'version': None, 'body': '', 'url': '', 'error': None}
+            cached = {'repository': REPOSITORY, 'checked_at': now, 'version': None, 'body': '', 'published_at': '', 'url': '', 'error': None}
             try:
                 release = latest_release(store)
                 cached.update({key: release[key] for key in ('version', 'body', 'url')})
+                cached['published_at'] = release.get('published_at', '')
             except ValueError as error:
                 cached['error'] = str(error)
             except (urllib.error.URLError, OSError):

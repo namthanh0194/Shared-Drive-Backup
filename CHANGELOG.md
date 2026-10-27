@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.8 — 2026-10-27
+
+- Thay hộp xác nhận mặc định của trình duyệt bằng popup đồng bộ giao diện aaPanel, tự theo chế độ sáng/tối.
+- Popup cập nhật hiển thị phiên bản đang cài, phiên bản mới, ngày phát hành và nội dung thay đổi; chỉ chạy khi chọn Cập nhật ngay.
+- Giữ tiêu đề, nút đóng và thanh Huỷ / Xác nhận luôn trong màn hình; nội dung dài cuộn riêng, hỗ trợ bàn phím và màn hình nhỏ.
+- Chặn bấm cập nhật lặp lại hoặc đóng popup khi đang xử lý; hiển thị lỗi trong popup để thử lại.
+- Đồng bộ popup xác nhận cho Backup ngay, Tải kiểm tra, bật dọn dẹp Drive và Rollback; không đổi quy tắc backup, retention hoặc cập nhật.
+
 ## 1.0.7 — 2026-10-27
 
 - Sửa thứ tự khởi tạo popup: căn bố cục sau khi aaPanel hoàn tất mở layer, tránh vị trí bị ghi lại thành top:20%.
