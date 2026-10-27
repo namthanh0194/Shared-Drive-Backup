@@ -1,0 +1,13 @@
+{
+  "title": "Shared Drive Backup",
+  "name": "shared_drive_backup",
+  "type": "plugin",
+  "ps": "Backup website, database và thư mục lên Google Shared drives; tích hợp Cron aaPanel",
+  "versions": "1.0.0",
+  "checks": "/www/server/panel/plugin/shared_drive_backup/shared_drive_backup_main.py",
+  "author": "Local",
+  "home": "https://github.com/namthanh0194/aapanel-shared-drive-backup",
+  "date": "2026-10-26",
+  "default": false,
+  "display": 1
+}
