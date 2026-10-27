@@ -60,6 +60,36 @@ Transfer the generated `authorized_user` file securely and import as above. This
 
 Remote layout: selected folder → `VPS-<stable server ID>` → `<kind>-<source/destination/task hash>` → timestamped archive. Each native Cron schedule has its own namespace; manual runs are separate from Cron retention. Each VPS generates its own ID. Never clone production `data/` onto another VPS, or both could share retention ownership.
 
+## Website restore and native Backup / Restore (DEV, unreleased)
+
+This feature is in DEV only; installed v1.0.8 stays unchanged until a separately approved release/update. It restores **PHP website files/code**, not databases, OLS settings, SSL certificates or DNS.
+
+### aaPanel integration
+
+- Uses the existing `sites` and `backup` tables in `data/default.db`, without schema migrations, core/frontend patches or impersonating `gdrive`.
+- New verified PHP-site backups register the real site ID (`pid`), `type=0` and the core remote filename format `local_path|shared_drive_backup|remote_file_id`. The local-path part is metadata, not a claim that a local archive exists.
+- The native remote-row action opens plugin settings. Select **Khôi phục** there; this implementation does not inject native local Restore/Download buttons or a provider-filter card into aaPanel.
+- For existing history, choose the website and explicitly **Đồng bộ trang này vào Backup / Restore aaPanel**. Sync handles the current page and is idempotent. Legacy backups without a recorded site ID first require typing the website name to link them.
+- Only verified site backups from this VPS's plugin history are listed, not arbitrary files on Drive. Site ID/name/path and the configured destination must match; cross-VPS imports are not implemented.
+- Native rows reflect the last registration/sync. Only confirmed trashed files remove plugin-owned rows; permission errors, HTTP 404 and network failures retain them. Sync does not touch other providers' rows. Removing a native row does not delete the Drive archive.
+
+### Restore workflow
+
+1. Select the PHP website and an accessible verified backup. **Tải về VPS** uses the existing download-only flow.
+2. Prefer **Giải nén kiểm tra**: the worker downloads, verifies size/checksums and extracts into private `data/restores/<job_id>/files/<archive_root>`, without changing the website.
+3. For **Khôi phục website**, stop the site in aaPanel and separately stop processes/Cron jobs writing its files. Type the exact website name in the confirmation dialog. The destination comes from aaPanel, never a client-supplied path.
+4. The worker rechecks site identity/webroot inode, extracts privately on the same filesystem, snapshots the current webroot, renames the old tree aside and activates the new tree. It uses core-style `www` ownership, files `0644` and directories `0755`.
+5. Follow progress and output paths in **Lịch sử**. The website remains stopped. Validate files and restore the matching database separately if needed before starting the site yourself.
+
+Partial backups with exclusions support inspection only. Archives containing links, devices, sparse files, traversal, duplicate paths or multiple roots are rejected. Replacement rejects symlink/mounted/overlapping webroots, nested mounts and ancestor directories not root-owned or writable by group/others. File-count, expanded-size and free-space limits apply; not every uploaded backup is eligible for automatic restore.
+
+### Recovery and retained files
+
+- Download and pre-restore `before.tar.gz` remain in private `data/restores/<job_id>/`; History records the snapshot checksum. Staging/original tree stay in private `<webroot-parent>/.sdb-restore-<job_id>/`; History shows the exact `previous_path`. These files are not governed by Drive retention.
+- Snapshot/extraction failure leaves the website untouched. Failed activation attempts to restore the original tree.
+- Interrupted activation or failed rollback retains `data/restore-recovery.json`, blocking new work and update/rollback. An administrator must inspect the journal, History, webroot, staged and previous paths to determine the complete tree to recover. **Do not blindly delete the journal or restart the site.** Automatic crash recovery is not implemented.
+- Keep snapshot and previous tree until validation succeeds. Cleanup is manual; never remove data needed by an unfinished restore.
+
 ## Cron Job
 
 aaPanel → Cron Job → Backup Site / Backup Database / Backup Directory → **Backup to: Shared Drive Backup**. Set source, schedule, exclusion rules and retain count there. The worker reads the saved Cron row by ID, validates target/type, uses the plugin's destination, and exits nonzero on failure. `ALL`/multi-source Site and MySQL jobs run sources sequentially. There is no second scheduler in the plugin. The plugin's Cron tab lists only its own native schedules and links to the panel's scheduler.

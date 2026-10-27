@@ -1,11 +1,15 @@
 import hashlib
 import re
+import shutil
 from pathlib import Path
 
 from sdb import PLUGIN
 
 FOLDER = 'application/vnd.google-apps.folder'
 SCOPES = ['https://www.googleapis.com/auth/drive']
+
+class BackupMissing(ValueError):
+    pass
 
 
 def identifier(value):
@@ -207,7 +211,21 @@ class DriveClient:
             removed += 1
         return removed
 
-    def download(self, remote_id, destination, expected_md5, expected_sha256, configuration, task, parent_id):
+    def backup_metadata(self, configuration, remote, task):
+        remote_id = identifier(remote['id'])
+        metadata = self.service.files().get(fileId=remote_id, supportsAllDrives=True, fields='id,name,size,md5Checksum,appProperties,parents,driveId,trashed').execute(num_retries=3)
+        if metadata.get('trashed'):
+            raise BackupMissing('Backup đã ở trong thùng rác Drive.')
+        properties = metadata.get('appProperties', {})
+        if metadata.get('driveId') != configuration['drive_id'] or remote['parent_id'] not in metadata.get('parents', []):
+            raise ValueError('Backup không còn trong đúng Drive/thư mục.')
+        if properties.get('sdb_plugin') != PLUGIN or properties.get('sdb_server') != configuration['server_id'] or properties.get('sdb_task') != task or properties.get('sdb_verified') != 'true':
+            raise ValueError('Backup không thuộc VPS/tác vụ đã xác minh.')
+        if metadata.get('md5Checksum') != remote['md5Checksum'] or properties.get('sdb_sha256') != remote['sha256'] or int(metadata.get('size', -1)) != int(remote['size']):
+            raise ValueError('Backup trên Drive đã thay đổi checksum/kích thước.')
+        return metadata
+
+    def download(self, remote_id, destination, expected_md5, expected_sha256, configuration, task, parent_id, max_bytes=None, reserve_bytes=0, progress=None):
         from googleapiclient.http import MediaIoBaseDownload
 
         identifier(remote_id)
@@ -219,6 +237,8 @@ class DriveClient:
             raise ValueError('File không thuộc tác vụ/VPS này.')
         if metadata.get('md5Checksum') != expected_md5:
             raise ValueError('File trên Drive đã thay đổi.')
+        if max_bytes is not None and (int(metadata.get('size', -1)) <= 0 or int(metadata['size']) > max_bytes):
+            raise ValueError('File vượt giới hạn dung lượng tải.')
         request = self.service.files().get_media(fileId=remote_id, supportsAllDrives=True)
         try:
             with open(destination, 'xb') as output:
@@ -226,6 +246,12 @@ class DriveClient:
                 done = False
                 while not done:
                     status, done = download.next_chunk(num_retries=5)
+                    if max_bytes is not None and output.tell() > max_bytes:
+                        raise ValueError('Dừng tải vì vượt giới hạn dung lượng.')
+                    if reserve_bytes and shutil.disk_usage(Path(destination).parent).free < reserve_bytes:
+                        raise ValueError('Dừng tải để giữ dung lượng đĩa dự phòng.')
+                    if progress and status:
+                        progress(round(status.progress() * 100))
             md5, sha256 = digests(destination)
             if md5 != expected_md5 or sha256 != expected_sha256:
                 raise ValueError('Checksum bản tải về không khớp.')

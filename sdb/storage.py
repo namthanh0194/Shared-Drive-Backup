@@ -151,6 +151,11 @@ class Store:
             connection.execute('INSERT INTO jobs (id,created,updated,status,details) VALUES (?,?,?,?,?)', (job_id, now, now, 'queued', json.dumps(details)))
         return job_id
 
+    def site_backups(self, site_name, offset=0, limit=21):
+        with self.connect() as connection:
+            rows = connection.execute("SELECT * FROM jobs WHERE status='success' AND json_extract(details,'$.kind')='site' AND json_extract(details,'$.target')=? AND json_extract(details,'$.verified')=1 AND json_type(details,'$.remote')='object' ORDER BY created DESC,id DESC LIMIT ? OFFSET ?", (site_name, limit, offset)).fetchall()
+        return [{**dict(row), 'details': json.loads(row['details'])} for row in rows]
+
     def update_job(self, job_id, status, **details):
         with self.connect() as connection:
             row = connection.execute('SELECT details FROM jobs WHERE id=?', (job_id,)).fetchone()
@@ -161,6 +166,8 @@ class Store:
             connection.execute('UPDATE jobs SET status=?,updated=?,details=? WHERE id=?', (status, time.time(), json.dumps(document), job_id))
 
     def busy(self):
+        if (self.data / 'restore-recovery.json').exists():
+            return True
         try:
             with file_lock(self.data / 'operation.lock'):
                 return False

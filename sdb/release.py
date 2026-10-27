@@ -203,6 +203,8 @@ def deploy(source, destination, panel_path='/www/server/panel', lock=True):
     validate_code(source)
     store = Store(destination)
     with file_lock(store.data / 'operation.lock') if lock else nullcontext():
+        if (store.data / 'restore-recovery.json').exists():
+            raise ValueError('Khôi phục website chưa hoàn tất. Không cập nhật/rollback trước khi kiểm tra journal restore.')
         recovery_path = store.data / 'deployment-recovery.json'
         if recovery_path.exists():
             raise ValueError('Có deployment chưa phục hồi. Chạy tools/recover_deployment.py trước khi cập nhật tiếp.')

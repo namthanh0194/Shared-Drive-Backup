@@ -13,6 +13,7 @@ from sdb.integration import register, unregister
 from sdb.panel import Panel
 from sdb.storage import Store, file_lock, safe_error
 from sdb.worker import ensure_ready, run_backup, run_download, validate_exclusions
+from sdb.restore import run_restore
 
 
 def cron_backup(store, kind, target, keep, echo=''):
@@ -61,6 +62,8 @@ def main():
             return 0
         if operation in {'backup', 'download'}:
             return 0 if (run_backup if operation == 'backup' else run_download)(store, sys.argv[2]) else 1
+        if operation == 'restore':
+            return 0 if run_restore(store, sys.argv[2]) else 1
         if operation in {'site', 'path', 'database'}:
             return 0 if cron_backup(store, operation, sys.argv[2], sys.argv[3], sys.argv[4] if len(sys.argv) > 4 else '') else 1
         if operation in {'register', 'unregister'}:

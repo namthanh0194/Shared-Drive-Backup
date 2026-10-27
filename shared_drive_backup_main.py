@@ -12,6 +12,7 @@ class shared_drive_backup_main:
             'status', 'save_credentials', 'list_drives', 'browse_folders', 'create_folder', 'set_destination',
             'connection_check', 'save_settings', 'inventory', 'history', 'start_backup', 'start_download',
             'tasks', 'save_github_token', 'check_update', 'update', 'rollback', 'repair_integration', 'read_log',
+            'restore_sites', 'restore_catalog', 'map_backup', 'sync_native', 'start_restore',
         }
         if method not in allowed:
             return {'status': False, 'msg': 'Thao tác không được phép.'}
@@ -24,6 +25,9 @@ class shared_drive_backup_main:
             'start_backup': {'kind', 'target', 'keep', 'exclusions'},
             'start_download': {'job_id'}, 'read_log': {'job_id'},
             'save_github_token': {'token'}, 'update': {'version'}, 'check_update': {'force'},
+            'restore_catalog': {'site_id', 'offset'}, 'sync_native': {'site_id', 'offset'},
+            'map_backup': {'backup_id', 'site_id', 'confirmation'},
+            'start_restore': {'backup_id', 'site_id', 'mode', 'confirmation'},
         }
         source = arguments.get_items() if hasattr(arguments, 'get_items') else (arguments or {})
         payload = {key: source[key] for key in fields.get(method, set()) if key in source}
@@ -53,6 +57,7 @@ for method_name in [
     'status', 'save_credentials', 'list_drives', 'browse_folders', 'create_folder', 'set_destination',
     'connection_check', 'save_settings', 'inventory', 'history', 'start_backup', 'start_download',
     'tasks', 'save_github_token', 'check_update', 'update', 'rollback', 'repair_integration', 'read_log',
+    'restore_sites', 'restore_catalog', 'map_backup', 'sync_native', 'start_restore',
 ]:
     setattr(shared_drive_backup_main, method_name, endpoint(method_name))
 

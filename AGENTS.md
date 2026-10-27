@@ -1,6 +1,8 @@
 # Shared Drive Backup — hướng dẫn dự án
 
 ## Mục đích và kiến trúc
+- `sdb/native.py`: liên kết website và bản backup remote theo schema core; không sửa core/schema hoặc giả thành backup local.
+- `sdb/restore.py`: danh sách đã xác minh, giải nén an toàn, thay website đã dừng và journal phục hồi. Journal chưa xử lý phải chặn tác vụ mới/cập nhật; không gọi shell restore thiếu kiểm tra của core.
 - Plugin aaPanel độc lập: backup website, MySQL cục bộ và thư mục lên Google Shared drives.
 - Repo chính thức: `namthanh0194/Shared-Drive-Backup` (public).
 - DEV: `/root/DEV/aapanel-shared-drive-backup`; production: `/www/server/panel/plugin/shared_drive_backup`.

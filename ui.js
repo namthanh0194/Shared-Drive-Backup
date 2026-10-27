@@ -4,11 +4,11 @@
   if (!root || root.dataset.initialized) return;
   root.dataset.initialized = 'true';
   const find = id => root.querySelector('#sdb-' + id);
-  const state = { config: {}, inventory: { sites: [], databases: [] }, jobs: [], release: null, updateChecking: false, nextUpdateCheck: 0, picker: { drive: '', folder: '', next: '', driveNext: '', sequence: 0 }, pending: 0 };
+  const state = { config: {}, inventory: { sites: [], databases: [] }, jobs: [], release: null, updateChecking: false, nextUpdateCheck: 0, restore: { site: null, offset: 0, next: null, sequence: 0 }, picker: { drive: '', folder: '', next: '', driveNext: '', sequence: 0 }, pending: 0 };
   const secure = location.protocol === 'https:';
   const labels = { queued: 'Chờ chạy', running: 'Đang chạy', success: 'Thành công', failed: 'Thất bại' };
-  const phases = { preflight: 'kiểm tra', archive: 'nén', upload: 'upload', retention: 'giữ bản', download: 'tải về', complete: 'hoàn tất' };
-  const kinds = { site: 'Website', database: 'MySQL', path: 'Thư mục', download: 'Tải kiểm tra' };
+  const phases = { preflight: 'kiểm tra', archive: 'nén', upload: 'upload', retention: 'giữ bản', download: 'tải về', validate: 'kiểm tra archive', extract: 'giải nén', snapshot: 'tạo bản dự phòng', activate: 'thay thế webroot', complete: 'hoàn tất' };
+  const kinds = { site: 'Website', database: 'MySQL', path: 'Thư mục', download: 'Tải kiểm tra', restore: 'Khôi phục' };
   function text(id, value) { find(id).textContent = value == null ? '—' : String(value); }
   function message(value, error) { const area = find('message'); area.hidden = !value; area.textContent = value || ''; area.dataset.error = String(Boolean(error)); }
   function pickerError(error) { find('picker-error').hidden = !error; find('picker-error').textContent = error ? error.message || String(error) : ''; }
@@ -23,6 +23,10 @@
     const accept = find('confirm-accept');
     const cancel = find('confirm-cancel');
     const close = find('confirm-close');
+    const input = find('confirm-input');
+    find('confirm-input-wrap').hidden = !options.confirmation;
+    input.value = '';
+    input.placeholder = options.confirmation || '';
     const release = options.release;
     text('confirm-title', options.title);
     text('confirm-heading', options.heading || options.title);
@@ -42,7 +46,7 @@
       text('confirm-notes', release.body || 'Chưa có ghi chú phát hành.');
     }
     text('confirm-accept', options.confirmLabel || 'Xác nhận');
-    [accept, cancel, close].forEach(control => { control.disabled = false; });
+    [accept, cancel, close, input].forEach(control => { control.disabled = false; });
     accept.removeAttribute('aria-busy');
     return new Promise(resolve => {
       let busy = false;
@@ -60,15 +64,21 @@
       dialog.addEventListener('keydown', event => {
         if (event.key !== 'Tab') return;
         event.preventDefault();
-        const controls = [close, cancel, accept].filter(control => !control.disabled);
+        const controls = [close, ...(options.confirmation ? [input] : []), cancel, accept].filter(control => !control.disabled);
         if (!controls.length) return;
         const index = controls.indexOf(document.activeElement);
         controls[(index + (event.shiftKey ? controls.length - 1 : 1)) % controls.length].focus();
       }, { signal: events.signal });
       accept.addEventListener('click', async () => {
         if (busy) return;
+        if (options.confirmation && input.value !== options.confirmation) {
+          text('confirm-error', 'Nhập chính xác: ' + options.confirmation);
+          find('confirm-error').hidden = false;
+          input.focus();
+          return;
+        }
         busy = true;
-        [accept, cancel, close].forEach(control => { control.disabled = true; });
+        [accept, cancel, close, input].forEach(control => { control.disabled = true; });
         accept.setAttribute('aria-busy', 'true');
         text('confirm-accept', 'Đang xử lý…');
         find('confirm-error').hidden = true;
@@ -81,7 +91,7 @@
           find('confirm-error').scrollIntoView({ block: 'nearest' });
         } finally {
           busy = false;
-          [accept, cancel, close].forEach(control => { control.disabled = false; });
+          [accept, cancel, close, input].forEach(control => { control.disabled = false; });
           accept.removeAttribute('aria-busy');
           text('confirm-accept', options.confirmLabel || 'Xác nhận');
           if (dialog.open) cancel.focus({ preventScroll: true });
@@ -112,8 +122,9 @@
     if (name === 'history') loadHistory().catch(error => message(error.message, true));
     if (name === 'cron') loadTasks().catch(error => message(error.message, true));
     if (name === 'backup') loadInventory().catch(error => message(error.message, true));
+    if (name === 'restore') loadRestoreSites().catch(error => message(error.message, true));
   }
-  function statusNode(job) { const node = element('span', labels[job.status] || job.status, 'sdb-state sdb-state-' + job.status); if (job.status === 'running') node.textContent += ' · ' + (phases[job.details.phase] || job.details.phase || '') + (job.details.phase === 'upload' ? ' ' + (job.details.progress || 0) + '%' : ''); return node; }
+  function statusNode(job) { const node = element('span', labels[job.status] || job.status, 'sdb-state sdb-state-' + job.status); if (job.status === 'running') node.textContent += ' · ' + (phases[job.details.phase] || job.details.phase || '') + (['upload', 'download', 'extract'].includes(job.details.phase) ? ' ' + (job.details.progress || 0) + '%' : ''); return node; }
   function renderJobs(target, jobs, detailed) {
     target.replaceChildren();
     if (!jobs.length) { const row = element('tr'); const cell = element('td', 'Chưa có tác vụ. Chọn nơi lưu và chạy bản backup thử đầu tiên.', 'sdb-empty'); cell.colSpan = detailed ? 5 : 4; row.append(cell); target.append(row); return; }
@@ -121,6 +132,7 @@
   }
   async function refresh() {
     const result = await api('status'); state.config = result.config;
+    if (result.recovery_required) message('Có journal cập nhật/khôi phục chưa hoàn tất. Kiểm tra README và lịch sử trước khi chạy tiếp; không xoá journal để bỏ qua cảnh báo.', true);
     if (result.recovery_required) message('Cập nhật trước chưa hoàn tất. Không chạy backup; dùng công cụ recover_deployment.py theo README.', true);
     text('version', 'v' + result.version); text('current-version', result.version); text('repository', result.repository);
     text('server-summary', result.config.server_name + ' · VPS ID ' + result.config.server_id.slice(0, 12)); text('route-source', result.config.server_name); text('route-drive', result.config.drive_name || 'Chưa chọn Shared drive'); text('route-folder', result.config.folder_name || 'Chưa chọn thư mục');
@@ -134,7 +146,89 @@
     renderJobs(find('recent-rows'), result.history, false);
     return result;
   }
-  async function loadHistory() { const result = await api('history'); state.jobs = result.jobs; renderJobs(find('history-rows'), result.jobs, true); }
+  async function loadHistory() { const result = await api('history'); state.jobs = result.jobs; renderJobs(find('history-rows'), result.jobs, true); result.jobs.forEach((job, index) => { if (job.details.kind !== 'restore') return; const cell = find('history-rows').rows[index].cells[0]; [['restore_path', 'Kết quả'], ['snapshot', 'Snapshot trước khôi phục'], ['previous_path', 'Thư mục cũ']].forEach(([key, label]) => { if (job.details[key]) cell.append(element('small', label + ': ' + job.details[key])); }); if (job.details.recovery_required) cell.append(element('strong', 'Có journal chưa hoàn tất. Không chạy lại; kiểm tra phục hồi trước.')); }); }
+  async function loadRestoreSites() {
+    const previous = find('restore-site').value;
+    const result = await api('restore_sites');
+    const select = find('restore-site');
+    select.replaceChildren(element('option', 'Chọn website…'));
+    select.firstChild.value = '';
+    result.sites.forEach(site => { const option = element('option', site.name); option.value = site.id; select.append(option); });
+    if (Array.from(select.options).some(option => option.value === previous)) select.value = previous;
+    await loadRestoreCatalog();
+  }
+  async function restoreAction(backup, mode) {
+    const site = state.restore.site;
+    if (!site) return;
+    const replace = mode === 'replace';
+    const download = mode === 'download';
+    let result;
+    const accepted = await confirmAction({ title: download ? 'Tải backup về VPS' : replace ? 'Khôi phục website' : 'Giải nén kiểm tra', message: 'Website: ' + site.name + '\nWebroot: ' + site.path + '\nBackup: ' + backup.name + '\n\n' + (replace ? 'Thay thế toàn bộ file website, không merge. Đã dừng website và các tác vụ ghi dữ liệu? Plugin tạo snapshot và giữ thư mục cũ. Không khôi phục database/OLS/SSL/DNS; không tự bật lại website.' : download ? 'Chỉ tải và xác minh checksum, không giải nén hay thay đổi website.' : 'Tải, kiểm tra checksum và giải nén vào thư mục riêng của plugin. Không thay đổi website.'), confirmation: replace ? site.name : '', confirmLabel: replace ? 'Khôi phục website' : download ? 'Tải về VPS' : 'Giải nén kiểm tra' }, async () => {
+      result = download ? await api('start_download', { job_id: backup.id }) : await api('start_restore', { backup_id: backup.id, site_id: site.id, mode, confirmation: replace ? find('confirm-input').value : '' });
+    });
+    if (accepted) { message('Đã tạo tác vụ ' + result.job_id + '. Theo dõi tiến độ và đường dẫn kết quả trong Lịch sử.', false); showTab('history'); }
+  }
+  async function mapRestoreBackup(backup) {
+    const site = state.restore.site;
+    if (!site) return;
+    const accepted = await confirmAction({ title: 'Liên kết backup cũ với website', message: 'Backup: ' + backup.name + '\nWebsite: ' + site.name + '\nĐường dẫn hiện tại: ' + site.path + '\n\nBản cũ chưa lưu ID website. Chỉ tiếp tục nếu đây đúng là website gốc; bước này chưa khôi phục file.', confirmation: site.name, confirmLabel: 'Liên kết website' }, () => api('map_backup', { backup_id: backup.id, site_id: site.id, confirmation: find('confirm-input').value }));
+    if (accepted) await loadRestoreCatalog();
+  }
+  async function loadRestoreCatalog() {
+    const sequence = ++state.restore.sequence;
+    const siteId = find('restore-site').value;
+    state.restore.site = null;
+    find('restore-sync').disabled = true;
+    find('restore-next').disabled = true;
+    find('restore-prev').disabled = true;
+    const rows = find('restore-rows');
+    rows.replaceChildren();
+    text('restore-status', siteId ? 'Đang kiểm tra metadata trên Drive…' : 'Chọn website để xem backup.');
+    if (!siteId) { text('restore-target', 'Chưa chọn website.'); return; }
+    try {
+      const result = await api('restore_catalog', { site_id: siteId, offset: state.restore.offset });
+      if (sequence !== state.restore.sequence || siteId !== find('restore-site').value) return;
+      state.restore.site = result.site;
+      state.restore.next = result.next_offset;
+      text('restore-target', result.site.path + ' · ' + (String(result.site.status) === '0' ? 'Website đang dừng' : 'Website đang chạy — chỉ tải/giải nén kiểm tra; dừng trong aaPanel trước khi thay thế.'));
+      text('restore-status', result.backups.length + ' bản trên trang này.');
+      result.backups.forEach(backup => {
+        const row = element('tr');
+        const name = element('td');
+        name.append(element('div', backup.name), element('small', (backup.origin === 'cron' ? 'Cron aaPanel' : 'Thủ công') + (backup.partial ? ' · Có exclusions' : '') + (!backup.mapped ? ' · Chưa liên kết ID website' : '')));
+        const status = element('td', ({ available: 'Còn trên Drive', missing: 'Trong thùng rác', unavailable: 'Chưa xác minh' })[backup.availability] || 'Chưa xác minh');
+        if (backup.error) status.append(element('small', backup.error));
+        const actions = element('td');
+        const available = backup.availability === 'available';
+        const add = (label, callback, disabled) => { const control = button(label, () => callback().catch(error => message(error.message, true))); control.disabled = disabled; actions.append(control); };
+        add('Tải về VPS', () => restoreAction(backup, 'download'), !available);
+        if (!backup.mapped && available) add('Liên kết website', () => mapRestoreBackup(backup), false);
+        add('Giải nén kiểm tra', () => restoreAction(backup, 'preview'), !available || !backup.mapped);
+        add('Khôi phục website', () => restoreAction(backup, 'replace'), !available || !backup.mapped || backup.partial || String(result.site.status) !== '0');
+        row.append(name, element('td', date(backup.created)), element('td', formatSize(backup.size)), status, actions);
+        rows.append(row);
+      });
+      if (!result.backups.length) { const row = element('tr'); const cell = element('td', 'Không có backup website đã xác minh trên trang này.', 'sdb-empty'); cell.colSpan = 5; row.append(cell); rows.append(row); }
+      find('restore-sync').disabled = !result.backups.length;
+      find('restore-next').disabled = result.next_offset == null;
+      find('restore-prev').disabled = state.restore.offset === 0;
+    } catch (error) {
+      if (sequence === state.restore.sequence) text('restore-status', 'Không kiểm tra được backup: ' + error.message);
+      throw error;
+    }
+  }
+  find('restore-site').addEventListener('change', () => { state.restore.offset = 0; loadRestoreCatalog().catch(error => message(error.message, true)); });
+  bind('restore-refresh', event => action(event.currentTarget, loadRestoreSites));
+  bind('restore-next', () => { if (state.restore.next == null) return; state.restore.offset = state.restore.next; return loadRestoreCatalog(); });
+  bind('restore-prev', () => { state.restore.offset = Math.max(0, state.restore.offset - 20); return loadRestoreCatalog(); });
+  bind('restore-sync', async () => {
+    const site = state.restore.site;
+    if (!site) return;
+    let result;
+    const offset = state.restore.offset;
+    const accepted = await confirmAction({ title: 'Đồng bộ danh sách backup aaPanel', message: 'Website: ' + site.name + '\nChỉ đồng bộ tối đa 20 bản trên trang này đã liên kết và xác minh. Không tải/xoá file Drive. Chỉ bỏ dòng do plugin quản lý khi xác nhận file ở thùng rác; lỗi quyền/mạng không xoá dòng.', confirmLabel: 'Đồng bộ' }, async () => { result = await api('sync_native', { site_id: site.id, offset }); });
+    if (accepted) { message('Đã ghi ' + result.registered + ' bản; bỏ ' + result.missing_removed + ' bản đã vào thùng rác khỏi danh sách native.', false); await loadRestoreCatalog(); }
+  });
   async function loadInventory() { state.inventory = await api('inventory'); renderTargets(); }
   function renderTargets() { const kind = find('backup-kind').value; find('target-select-wrap').hidden = kind === 'path'; find('target-path-wrap').hidden = kind !== 'path'; find('backup-exclusions').disabled = kind === 'database'; const select = find('backup-target'); const previous = select.value; select.replaceChildren(element('option', 'Chọn nguồn backup…')); select.firstChild.value = ''; (state.inventory[kind === 'site' ? 'sites' : 'databases'] || []).forEach(item => { const option = element('option', item.name); option.value = item.name; select.append(option); }); if (Array.from(select.options).some(option => option.value === previous)) select.value = previous; }
   async function loadTasks() { const result = await api('tasks'); const rows = find('cron-rows'); rows.replaceChildren(); if (!result.tasks.length) { const row = element('tr'); const cell = element('td', 'Chưa có lịch dùng Shared Drive Backup. Tạo lịch tại Cron Job aaPanel.', 'sdb-empty'); cell.colSpan = 4; row.append(cell); rows.append(row); } result.tasks.forEach(task => { const row = element('tr'); row.append(element('td', task.name), element('td', (kinds[task.sType] || task.sType) + ' · ' + task.sName), element('td', task.type + ' · ' + String(task.where_hour).padStart(2, '0') + ':' + String(task.where_minute).padStart(2, '0')), element('td', Number(task.status) === 1 ? 'Đang bật' : 'Đang tắt')); rows.append(row); }); }

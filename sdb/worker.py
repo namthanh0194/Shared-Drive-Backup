@@ -130,6 +130,8 @@ def mysql_archive(panel, database, output, max_bytes, reserve_bytes):
 
 
 def ensure_ready(store, client=None):
+    if (store.data / 'restore-recovery.json').exists():
+        raise ValueError('Khôi phục website chưa hoàn tất. Kiểm tra journal restore trước khi chạy tiếp.')
     if (store.data / 'deployment-recovery.json').exists():
         raise ValueError('Deployment chưa phục hồi. Chạy tools/recover_deployment.py trước khi backup.')
     configuration = store.config()
@@ -157,6 +159,12 @@ def run_backup(store, job_id, panel=None):
                 raise ValueError('Nơi lưu đã thay đổi sau khi tạo tác vụ. Vui lòng chạy lại.')
             kind, target = details['kind'], details['target']
             source = panel.source(kind, target)
+            if kind == 'site':
+                from sdb.native import site_by_name
+                snapshot = site_by_name(panel, target)
+                if str(snapshot['path']) != str(source):
+                    raise ValueError('Đường dẫn website đã thay đổi trước khi backup.')
+                store.update_job(job_id, 'running', site=snapshot, archive_root=Path(source).name)
             identity = 'cron:' + details['cron_echo'] if details.get('origin') == 'cron' else 'manual'
             task = task_key(kind, target, configuration['folder_id'], identity)
             name = re.sub(r'[^A-Za-z0-9_.-]', '_', Path(target).name)[:70] or kind
@@ -187,6 +195,13 @@ def run_backup(store, job_id, panel=None):
             if not configuration['keep_local'] and not details.get('keep_local'):
                 archive.unlink()
             store.update_job(job_id, 'success', phase='complete', remote=metadata, pruned=removed, warning=warning, local_retained=archive.exists(), verified=True)
+            if kind == 'site' and str(snapshot['project_type']).upper() == 'PHP':
+                try:
+                    from sdb.native import register_backup
+                    native_id = register_backup(store, panel, store.job(job_id))
+                    store.update_job(job_id, 'success', native_id=native_id)
+                except Exception as error:
+                    store.update_job(job_id, 'success', warning=(warning + ' Đã backup nhưng chưa ghi danh sách aaPanel: ' + safe_error(error)).strip())
             print(f'Backup thành công: {archive.name}; checksum đã xác minh.', flush=True)
             if warning:
                 print(warning, flush=True)

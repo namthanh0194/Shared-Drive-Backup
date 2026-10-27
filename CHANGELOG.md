@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.9 — 2026-10-27
+
+- Tích hợp danh sách backup vào Backup / Restore website của aaPanel: hiển thị đúng website (pid) và bản remote theo cấu trúc core aaPanel. Thao tác remote mở plugin để khôi phục.
+- Thêm tab Khôi phục: duyệt các bản backup đã xác minh trên Drive của website, hỗ trợ tải về VPS, giải nén kiểm tra ra thư mục riêng hoặc khôi phục mã nguồn vào webroot.
+- Cơ chế khôi phục an toàn: tự động tạo snapshot trước khi khôi phục, lưu lại thư mục website cũ, yêu cầu dừng website trong aaPanel và gõ tên website để xác nhận trước khi thay thế. Chặn khôi phục nếu webroot chứa mount point hoặc thư mục cha không an toàn.
+- Giữ nguyên file cấu hình và thông tin kết nối khi cập nhật.
+
 ## 1.0.8 — 2026-10-27
 
 - Thay hộp xác nhận mặc định của trình duyệt bằng popup đồng bộ giao diện aaPanel, tự theo chế độ sáng/tối.
