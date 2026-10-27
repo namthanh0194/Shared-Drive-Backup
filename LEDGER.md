@@ -36,3 +36,7 @@
 - Verified GitHub API: tag `v1.0.1` and commit `681b457` exist remotely.
 - GitHub Actions: repository has `.github/workflows/release.yml` registered (Workflow ID 397794780). However, pushing both main and a tag in one git push or repository Actions default permission settings on newly created repos may require either Actions to be enabled/triggered or manual approval in GitHub repo Settings -> Actions. Currently `total_count: 0` runs and no GitHub Release has been created by GitHub yet.
 - Production live check remains safe: plugin detects no public Release asset yet and safely reports `Chưa có GitHub Release công khai. Tag Git chưa đủ để cập nhật.` without crashing.
+- Bumped version to 1.0.2 to incorporate top-right header update button.
+- Verified 55 Python tests, Playwright browser suite (10 auto-update scenarios + base checks) pass.
+- Updated production installation to v1.0.2 with `restart_panel_required:false`. Baseline hashes verified unchanged.
+- Committed `5ff739c` and created annotated tag `v1.0.2` containing verified package signature metadata. Pushed main and `refs/tags/v1.0.2` to origin.
