@@ -103,3 +103,13 @@
   - 128 bài test Python trong `tmp/` vượt qua 100% (bao gồm 37 bài test mới cho tính năng database).
   - Test Playwright chạy kiểm tra giao diện web thành công: luồng backup/restore database, kiểm tra responsive/modal 112 trường hợp, chế độ sáng/tối.
   - Không tác động dữ liệu production, không chạy backup/restore thật trên VPS, không commit/push hay deploy.
+
+## 2026-10-27 — Phát hành phiên bản 1.0.10: Khôi phục database MySQL và chuẩn hóa AGENTS.md
+
+- Người dùng đã phê duyệt phát hành bản cập nhật 1.0.10.
+- Đồng bộ version 1.0.10 trên cả 4 vị trí: sdb/__init__.py, info.json, index.html và CHANGELOG.md.
+- Tạo commit 1f6eb06 và ký annotated tag v1.0.10 bằng Ed25519 private key cục bộ (data/release-signing-key.pem).
+- Digest gói phát hành SHA-256: 51d5285e2d49fe353ac9a6217ccffd06f98e11d818a7d7251b256b220442eec1.
+- Push commit và tag v1.0.10 lên GitHub qua SSH deploy key.
+- GitHub Actions workflow run 40492129272 đã xác minh gói và chữ ký thành công.
+- GitHub Release v1.0.10 đã được tạo thành công với 2 assets: shared_drive_backup-1.0.10.zip và shared_drive_backup-1.0.10.zip.sig.
