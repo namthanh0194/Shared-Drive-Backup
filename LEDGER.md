@@ -169,3 +169,11 @@
 - Rà tracked files và 167 blob trong lịch sử Git reachable theo mẫu bí mật có độ tin cậy cao, không thấy cảnh báo; kiểm tra đường dẫn loại trừ data/logs/tmp/private keys. Đây không phải bảo đảm phát hiện mọi loại bí mật. ZIP allowlist gồm 34 file; không chứa runtime/credentials/khóa riêng.
 - Đã đóng gói/ký Ed25519 và xác minh khóa công khai ghim khớp. SHA-256 ZIP: d7dcdd71d855b236deda923135d14c4a0e89f3d42f14f9eb480a518026d89954. ZIP và .sig chỉ ở tmp/dist; tag sẽ chứa metadata chữ ký của gói, không phải chữ ký Git tag.
 - Snapshot hash mã production và core được giữ ở tmp/release-1.0.13-production-before.json; đối chiếu trước push không đổi, production vẫn 1.0.12. Chưa khẳng định Release thành công cho đến khi workflow và asset tải công khai được xác minh.
+
+### Kết quả phát hành 1.0.13
+
+- Commit release d40c0d2f69e9933b79fa3065e96c8d68cfba710c; push main và tag v1.0.13 atomic thành công. Rebuild và xác minh metadata/chữ ký của tag thành công trên đúng commit.
+- GitHub Actions run 40628918445 completed success. GitHub Release v1.0.13 là bản public latest, có đủ shared_drive_backup-1.0.13.zip và shared_drive_backup-1.0.13.zip.sig.
+- Tải anonymous cả hai assets: bytes trùng gói local, SHA-256 d7dcdd71d855b236deda923135d14c4a0e89f3d42f14f9eb480a518026d89954; chữ ký Ed25519 xác minh bằng khóa public của plugin đang cài. Gói đạt allowlist và version 1.0.13. Receipt: tmp/verified-release-1.0.13.json.
+- Chạy chính hàm check_for_updates của production 1.0.12 với Store/cache tạm trong tmp/, không dùng hoặc ghi runtime production: kết quả installed_version=1.0.12, version=1.0.13, available=true, error=null. Receipt: tmp/updater-probe-1.0.13.json. Người dùng có thể bấm Kiểm tra ngay rồi Cập nhật.
+- Đối chiếu hash sau publish: mã production/core không đổi, VPS vẫn 1.0.12. Không tự cài cập nhật hoặc đổi cache kiểm tra phiên bản thật, credentials, lịch Cron hay Drive.
