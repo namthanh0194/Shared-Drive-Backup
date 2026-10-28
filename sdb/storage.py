@@ -35,13 +35,24 @@ def atomic_json(path, value):
 
 
 @contextlib.contextmanager
-def file_lock(path, blocking=False):
+def file_lock(path, blocking=False, timeout=None, on_wait=None):
     descriptor = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
-        except BlockingIOError:
-            raise RuntimeError('Một tác vụ backup/cập nhật đang chạy. Vui lòng chờ.') from None
+        deadline = time.monotonic() + timeout if timeout is not None else None
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | (0 if blocking and deadline is None else fcntl.LOCK_NB))
+                break
+            except BlockingIOError:
+                if deadline is None:
+                    raise RuntimeError('Một tác vụ backup/cập nhật đang chạy. Vui lòng chờ.') from None
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError(f'Hết thời gian chờ khóa backup ({timeout:g} giây); chưa bắt đầu tác vụ.') from None
+                if on_wait:
+                    on_wait()
+                    on_wait = None
+                time.sleep(min(1, remaining))
         yield
     finally:
         os.close(descriptor)

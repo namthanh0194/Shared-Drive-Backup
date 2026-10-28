@@ -130,7 +130,7 @@
     if (name === 'restore') loadRestoreSites().catch(error => message(error.message, true));
     if (name === 'databases') loadDatabaseCatalog().catch(error => message(error.message, true));
   }
-  function statusNode(job) { const node = element('span', labels[job.status] || job.status, 'sdb-state sdb-state-' + job.status); if (job.status === 'running') node.textContent += ' · ' + (phases[job.details.phase] || job.details.phase || '') + (['upload', 'download', 'extract'].includes(job.details.phase) ? ' ' + (job.details.progress || 0) + '%' : ''); return node; }
+  function statusNode(job) { const node = element('span', job.status === 'queued' && job.details.phase === 'waiting_lock' ? 'Chờ tác vụ khác hoàn tất' : labels[job.status] || job.status, 'sdb-state sdb-state-' + job.status); if (job.status === 'running') node.textContent += ' · ' + (phases[job.details.phase] || job.details.phase || '') + (['upload', 'download', 'extract'].includes(job.details.phase) ? ' ' + (job.details.progress || 0) + '%' : ''); return node; }
   function renderJobs(target, jobs, detailed) {
     target.replaceChildren();
     if (!jobs.length) { const row = element('tr'); const cell = element('td', 'Chưa có tác vụ. Chọn nơi lưu và chạy bản backup thử đầu tiên.', 'sdb-empty'); cell.colSpan = detailed ? 5 : 4; row.append(cell); target.append(row); return; }

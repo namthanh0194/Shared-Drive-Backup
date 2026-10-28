@@ -58,7 +58,11 @@ Transfer the generated `authorized_user` file securely and import as above. This
 3. Click **Lưu vào thư mục này**. Browsing/canceling does not change the saved destination. The server verifies drive membership, folder type and `canAddChildren`.
 4. Run connection check, then a small manual backup and **Tải kiểm tra** to verify end-to-end.
 
-Remote layout: selected folder → `VPS-<stable server ID>` → `<kind>-<source/destination/task hash>` → timestamped archive. Each native Cron schedule has its own namespace; manual runs are separate from Cron retention. Each VPS generates its own ID. Never clone production `data/` onto another VPS, or both could share retention ownership.
+Remote layout: selected folder → `VPS-<stable server ID>` → source folder → timestamped archive. Website folders use `site-<domain>-<existing task hash>`. Database folders use `database-<database name>-<confirmed domain>-<existing task hash>`; without a confirmed link, the domain is omitted. A database linked to multiple websites uses `database-<database name>-shared-<count>-sites-<existing task hash>` rather than guessing one domain. Manage confirmed links in the Database tab; stale links are not used for labels. Folder labels are sanitized and limited to 150 characters, preserving the full distinguishing hash. Directory backups and database-batch manifest folders retain their existing names.
+
+On the next backup, the plugin locates the existing folder by its original namespace, checks its current plugin/VPS/parent ownership, and updates only its display name when permitted. Existing folder IDs, files, archive names, retention namespaces and restore references do not change. Ambiguous or foreign folder matches block the operation rather than creating another folder. A rename permission/API error alone keeps using the verified folder and reports a warning in History; it does not discard a verified backup. There is no bulk rename at installation/update time, and folders for sources no longer backed up are not automatically renamed.
+
+Each native Cron schedule has its own namespace; manual runs are separate from Cron retention. Each VPS generates its own ID. Never clone production `data/` onto another VPS, or both could share retention ownership.
 
 ## Backup theo đợt và khôi phục database (DEV, chưa phát hành)
 
@@ -150,6 +154,10 @@ Partial backups with exclusions support inspection only. Archives containing lin
 - Keep snapshot and previous tree until validation succeeds. Cleanup is manual; never remove data needed by an unfinished restore.
 
 ## Cron Job
+
+Scheduled backups (website, directory, one MySQL database or a MySQL batch) wait up to **6 hours per job** when another operation holds the plugin lock, instead of failing immediately. History shows **Chờ tác vụ khác hoàn tất** and the native Cron log records the wait. Once the lock is acquired, the worker repeats its readiness/recovery and destination checks before creating an archive. A pending recovery journal still blocks backup; waiting never bypasses recovery or starts a second operation in parallel. A timeout is recorded as a failed job with an explicit waiting-time error, not a MySQL dump error.
+
+Each native Cron schedule also has its own guard across waiting and all its backup members. A repeated invocation of that same schedule is skipped with a log message and a successful exit, without creating duplicate jobs; different schedules can wait independently. The original invocation still reports its own success/failure. Lock files are retained and released by closing their descriptors, not deleted. Waiting does not guarantee FIFO order, survives only while the Cron process is alive, and does not retry previously failed backups or change scheduled times. Manual backups, restore and update keep their existing locking behavior. No second scheduler or background queue service is installed.
 
 aaPanel → Cron Job → Backup Site / Backup Database / Backup Directory → **Backup to: Shared Drive Backup**. Set source, schedule, exclusion rules and retain count there. The worker reads the saved Cron row by ID, validates target/type, uses the plugin's destination, and exits nonzero on failure. `ALL`/multi-source Site and MySQL jobs run sources sequentially. There is no second scheduler in the plugin. The plugin's Cron tab lists only its own native schedules and links to the panel's scheduler.
 

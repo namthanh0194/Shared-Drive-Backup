@@ -12,7 +12,7 @@ from pathlib import Path
 from sdb.drive import BackupMissing, digests, make_client
 from sdb.panel import Panel
 from sdb.storage import assert_recovery_clear, atomic_json, file_lock, safe_error, sync_directory
-from sdb.worker import ensure_ready, mysql_archive, run_backup, task_key
+from sdb.worker import backup_lock, ensure_ready, mysql_archive, run_backup, task_key
 
 
 def database_name(value):
@@ -58,6 +58,13 @@ def inventory(store, panel):
         else:
             links[name] = [row['name'] for row in link['databases']]
     return {**result, 'links': links, 'stale_links': stale}
+
+
+def linked_sites(store, panel, name):
+    if not (store.data / 'database-links.json').exists():
+        return []
+    current = inventory(store, panel)
+    return sorted(site for site, names in current['links'].items() if name in names)
 
 
 def save_links(store, panel, links):
@@ -229,7 +236,7 @@ def run_backup_set(store, job_id, panel=None):
         return False
     started = False
     try:
-        with file_lock(store.data / 'operation.lock'):
+        with backup_lock(store, job_id):
             if store.job(job_id)['status'] != 'queued':
                 return False
             started = True

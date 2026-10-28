@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import tempfile
 import time
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 from sdb.drive import make_client
@@ -15,9 +15,36 @@ from sdb.panel import Panel
 from sdb.storage import assert_recovery_clear, file_lock, safe_error, validate_source
 
 
+CRON_LOCK_TIMEOUT = 6 * 60 * 60
+
+
+@contextmanager
+def backup_lock(store, job_id):
+    cron = store.job(job_id)['details'].get('origin') == 'cron'
+
+    def waiting():
+        store.update_job(job_id, 'queued', phase='waiting_lock', wait_started=time.time(), wait_timeout=CRON_LOCK_TIMEOUT)
+        print(f'Backup Cron {job_id}: chờ tác vụ khác hoàn tất, tối đa {CRON_LOCK_TIMEOUT:g} giây.', flush=True)
+
+    with file_lock(store.data / 'operation.lock', timeout=CRON_LOCK_TIMEOUT if cron else None, on_wait=waiting if cron else None):
+        yield
+
+
 def task_key(kind, target, folder_id, identity='manual'):
     digest = hashlib.sha256(json.dumps([kind, target, folder_id, identity], ensure_ascii=False).encode()).hexdigest()[:20]
     return kind + '-' + digest
+
+
+def backup_folder_name(kind, target, task, sites=()):
+    label = target
+    if kind == 'database':
+        if len(sites) == 1:
+            label += '-' + sites[0]
+        elif len(sites) > 1:
+            label += '-shared-' + str(len(sites)) + '-sites'
+    label = re.sub(r'[^A-Za-z0-9_.-]', '_', label)
+    digest = task.rsplit('-', 1)[1]
+    return kind + '-' + label[:150 - len(kind) - len(digest) - 2] + '-' + digest
 
 
 def validate_exclusions(patterns):
@@ -152,7 +179,7 @@ def run_backup(store, job_id, panel=None, lock=True):
     archive = None
     verified_upload = False
     try:
-        with file_lock(store.data / 'operation.lock') if lock else nullcontext():
+        with backup_lock(store, job_id) if lock else nullcontext():
             job = store.job(job_id)
             details = job['details']
             store.update_job(job_id, 'running', phase='preflight', progress=0)
@@ -162,12 +189,13 @@ def run_backup(store, job_id, panel=None, lock=True):
             kind, target = details['kind'], details['target']
             source = panel.source(kind, target)
             if kind == 'database':
-                from sdb.databases import database_name
+                from sdb.databases import database_name, linked_sites
                 database_name(target)
                 identity = panel.database_identity(target)
                 if details.get('database') and details['database'] != identity:
                     raise ValueError('Database đã đổi ID sau khi tạo tác vụ.')
-                store.update_job(job_id, 'running', database=identity)
+                sites = details['database_sites'] if details.get('batch_id') and 'database_sites' in details else linked_sites(store, panel, target)
+                store.update_job(job_id, 'running', database=identity, database_sites=sites)
             if kind == 'site':
                 from sdb.native import site_by_name
                 snapshot = site_by_name(panel, target)
@@ -176,6 +204,7 @@ def run_backup(store, job_id, panel=None, lock=True):
                 store.update_job(job_id, 'running', site=snapshot, archive_root=Path(source).name)
             identity = 'cron:' + details['cron_echo'] if details.get('origin') == 'cron' else 'manual'
             task = task_key(kind, target, configuration['folder_id'], identity)
+            upload_options = {'folder_name': backup_folder_name(kind, target, task, sites if kind == 'database' else ())} if kind in {'site', 'database'} else {}
             name = re.sub(r'[^A-Za-z0-9_.-]', '_', Path(target).name)[:70] or kind
             suffix = '.sql.gz' if kind == 'database' else '.tar.gz'
             archive = store.tmp / (f"{kind}-{name}-{time.strftime('%Y%m%d-%H%M%S')}-{job_id[:10]}" + suffix)
@@ -192,16 +221,16 @@ def run_backup(store, job_id, panel=None, lock=True):
                 archive_directory(source, archive, exclusions, max_bytes, reserve)
             archive.chmod(0o600)
             store.update_job(job_id, 'running', phase='upload', size=archive.stat().st_size)
-            metadata = client.upload(archive, configuration, task, lambda percent: store.update_job(job_id, 'running', progress=percent))
+            metadata = client.upload(archive, configuration, task, lambda percent: store.update_job(job_id, 'running', progress=percent), **upload_options)
             verified_upload = True
             store.update_job(job_id, 'running', phase='retention', remote=metadata, progress=100)
-            warning = ''
+            warning = metadata.get('folder_warning', '')
             try:
                 from sdb.databases import protected_files
                 protected = protected_files(store)
                 removed = 0 if details.get('batch_id') else client.prune(configuration, task, metadata['parent_id'], int(details.get('keep', 3)), metadata['id'], **({'protected_ids': protected} if protected else {}))
             except Exception as error:
-                warning = 'Backup đã xác minh nhưng dọn bản cũ thất bại: ' + safe_error(error)
+                warning = (warning + ' Backup đã xác minh nhưng dọn bản cũ thất bại: ' + safe_error(error)).strip()
                 removed = 0
             if not configuration['keep_local'] and not details.get('keep_local'):
                 archive.unlink()

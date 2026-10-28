@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 
 from sdb import PLUGIN
+from sdb.storage import safe_error
 
 FOLDER = 'application/vnd.google-apps.folder'
 SCOPES = ['https://www.googleapis.com/auth/drive']
@@ -122,28 +123,50 @@ class DriveClient:
             body['appProperties'] = properties
         return self.service.files().create(body=body, supportsAllDrives=True, fields='id,name,parents,driveId').execute(num_retries=3)
 
-    def owned_folder(self, drive_id, parent_id, name, namespace):
+    def owned_folder(self, drive_id, parent_id, name, namespace, rename=False):
         self.folder(drive_id, parent_id, writable=True)
         result = self.service.files().list(
             corpora='drive', driveId=drive_id, includeItemsFromAllDrives=True, supportsAllDrives=True,
             q=f"'{identifier(parent_id)}' in parents and trashed=false and mimeType='{FOLDER}' and appProperties has {{ key='sdb_namespace' and value='{query_string(namespace)}' }}",
-            pageSize=100, fields='files(id,name)',
+            pageSize=100, fields='nextPageToken,files(id,name)',
         ).execute(num_retries=3)
         folders = result.get('files', [])
+        if len(folders) > 1 or result.get('nextPageToken'):
+            raise ValueError('Có nhiều thư mục cùng định danh backup; không tự chọn hoặc tạo thêm.')
         if folders:
-            return folders[0]['id']
-        return self.create_folder(drive_id, parent_id, name, {'sdb_plugin': PLUGIN, 'sdb_namespace': namespace})['id']
+            folder_id = identifier(folders[0]['id'])
+            metadata = self.service.files().get(
+                fileId=folder_id, supportsAllDrives=True,
+                fields='id,name,mimeType,parents,driveId,trashed,appProperties,capabilities(canRename)',
+            ).execute(num_retries=3)
+            properties = metadata.get('appProperties', {})
+            if metadata.get('id') != folder_id or metadata.get('driveId') != drive_id or metadata.get('parents') != [parent_id] or metadata.get('mimeType') != FOLDER or metadata.get('trashed') or properties.get('sdb_plugin') != PLUGIN or properties.get('sdb_namespace') != namespace:
+                raise ValueError('Thư mục backup không còn đúng plugin/VPS/nguồn/nơi lưu; không sử dụng hoặc đổi tên.')
+            if rename and metadata.get('name') != name:
+                if not metadata.get('capabilities', {}).get('canRename'):
+                    metadata['warning'] = 'Chưa đổi tên thư mục backup: tài khoản không có quyền đổi tên; vẫn dùng thư mục đã xác minh.'
+                else:
+                    try:
+                        updated = self.service.files().update(fileId=folder_id, supportsAllDrives=True, body={'name': name}, fields='id,name').execute(num_retries=3)
+                        if updated.get('id') != folder_id or updated.get('name') != name:
+                            raise ValueError('Drive chưa xác nhận tên thư mục mới.')
+                        metadata['name'] = name
+                    except Exception as error:
+                        metadata['warning'] = 'Chưa xác nhận đổi tên thư mục backup; vẫn dùng thư mục đã xác minh: ' + safe_error(error)
+            return metadata
+        return self.create_folder(drive_id, parent_id, name, {'sdb_plugin': PLUGIN, 'sdb_namespace': namespace})
 
-    def task_folder(self, configuration, task):
+    def task_folder(self, configuration, task, folder_name=None):
         server_id = configuration['server_id']
         drive_id = configuration['drive_id']
         server = self.owned_folder(drive_id, configuration['folder_id'], f"VPS-{server_id[:12]}", server_id)
-        return self.owned_folder(drive_id, server, task, server_id + ':' + task)
+        return self.owned_folder(drive_id, server['id'], folder_name or task, server_id + ':' + task, rename=folder_name is not None)
 
-    def upload(self, filename, configuration, task, progress=None):
+    def upload(self, filename, configuration, task, progress=None, folder_name=None):
         from googleapiclient.http import MediaFileUpload
 
-        parent_id = self.task_folder(configuration, task)
+        parent = self.task_folder(configuration, task, folder_name=folder_name)
+        parent_id = parent['id']
         md5, sha256 = digests(filename)
         size = Path(filename).stat().st_size
         properties = {'sdb_plugin': PLUGIN, 'sdb_server': configuration['server_id'], 'sdb_task': task, 'sdb_sha256': sha256}
@@ -170,7 +193,7 @@ class DriveClient:
         verified_properties = {**properties, 'sdb_verified': 'true', 'sdb_md5': md5}
         self.service.files().update(fileId=metadata['id'], supportsAllDrives=True, body={'appProperties': verified_properties}, fields='id').execute(num_retries=3)
         metadata['appProperties'] = verified_properties
-        return {**metadata, 'sha256': sha256, 'parent_id': parent_id}
+        return {**metadata, 'sha256': sha256, 'parent_id': parent_id, 'folder_name': parent['name'], 'folder_warning': parent.get('warning', '')}
 
     def prune(self, configuration, task, parent_id, keep, exclude_id, protected_ids=()):
         if not configuration['prune_enabled']:

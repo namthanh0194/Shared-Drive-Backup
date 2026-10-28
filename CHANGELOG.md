@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.13 — 2026-10-28
+
+- Tên thư mục website có domain; thư mục database có tên DB và domain theo liên kết đã xác nhận, hoặc nhãn dùng chung nhiều website. Giữ nguyên hash/namespace/ID; đồng bộ tên thư mục cũ khi backup tiếp theo sau kiểm tra ownership. Lỗi đổi tên đơn thuần chỉ cảnh báo, không làm mất bản backup đã xác minh.
+- Backup Cron website/thư mục/MySQL chờ khóa tối đa 6 giờ mỗi tác vụ, hiển thị trạng thái chờ và báo rõ khi hết hạn thay vì thất bại ngay khi tác vụ khác đang chạy.
+- Chặn lượt chạy trùng của cùng lịch Cron trong suốt thời gian chờ và xử lý cả đợt; giữ khóa chung, kiểm tra lại journal/nơi lưu trước backup, không đổi giờ Cron hoặc cho backup chạy song song.
+
 ## 1.0.12 — 2026-10-27
 
 - Sửa Type/tên file trong danh sách backup Database aaPanel: dùng định dạng provider trước tên archive, giữ nguyên định danh plugin và format website; hỗ trợ chuyển đổi bản ghi cũ đúng ownership mà không đổi ID/số đếm.

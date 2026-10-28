@@ -1,7 +1,9 @@
+import hashlib
 import json
 import os
 import re
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -21,6 +23,18 @@ from sdb.storage import assert_recovery_clear
 def cron_backup(store, kind, target, keep, echo=''):
     if kind not in {'site', 'path', 'database'} or not 1 <= int(keep) <= 10000:
         raise ValueError('Tham số Cron không hợp lệ.')
+    identity = echo or json.dumps([kind, target], ensure_ascii=False)
+    key = hashlib.sha256(identity.encode()).hexdigest()
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(file_lock(store.data / ('cron-' + key + '.lock')))
+        except RuntimeError:
+            print('Bỏ qua lượt Cron trùng: lượt trước của cùng lịch đang chờ hoặc đang chạy.', flush=True)
+            return True
+        return _cron_backup(store, kind, target, keep, echo)
+
+
+def _cron_backup(store, kind, target, keep, echo):
     panel = Panel()
     cron = panel.cron_details(echo)
     if echo and cron is None:
